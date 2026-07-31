@@ -302,6 +302,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 @keyframes monitor-pulse { 50% { opacity: .35; } }
 .metrics-error { margin-bottom: 18px; }
 .metric-kpis { margin-bottom: 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.metric-kpis.topic-only { grid-template-columns: repeat(2, 1fr); }
 .metric-kpis article { min-height: 114px; padding: 17px; display: grid; align-content: space-between; background: linear-gradient(145deg, #151920, #11141a); border: 1px solid #252b35; border-radius: 9px; }
 .metric-kpis article.warning { border-color: rgba(255,126,86,.28); }
 .metric-kpis span { color: #69717e; font-size: 8px; font-weight: 700; letter-spacing: .1em; }

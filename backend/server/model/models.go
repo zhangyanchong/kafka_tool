@@ -143,7 +143,8 @@ type ConsumerPartitionsResponse struct {
 type MetricSnapshotResponse struct {
 	Timestamp       string `json:"timestamp"`
 	Topic           string `json:"topic"`
-	GroupID         string `json:"groupId"`
+	GroupID         string `json:"groupId,omitempty"`
+	HasConsumer     bool   `json:"hasConsumer"`
 	Partitions      int    `json:"partitions"`
 	StartOffset     int64  `json:"startOffset"`
 	EndOffset       int64  `json:"endOffset"`

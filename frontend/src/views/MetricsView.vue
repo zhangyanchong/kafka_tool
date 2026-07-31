@@ -22,17 +22,22 @@ const topics = ref<KafkaTopic[]>([]);
 const consumers = ref<KafkaConsumer[]>([]);
 const selectedTopic = ref("");
 const selectedGroup = ref("");
+const monitoredGroup = ref("");
 const samplingSeconds = ref(30);
 const samples = ref<MetricPoint[]>([]);
 const loadingOptions = ref(false);
 const refreshing = ref(false);
 const monitoring = ref(false);
 const error = ref("");
+const consumerOptionsError = ref("");
 let timer: number | undefined;
 
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
 const latestMeasurement = computed(() => measuredSamples.value[measuredSamples.value.length - 1]);
+const hasConsumerMetrics = computed(() =>
+  Boolean(samples.value.length ? monitoredGroup.value : selectedGroup.value),
+);
 const sortedConsumers = computed(() =>
   [...consumers.value].sort((left, right) => {
     const rank = (state: string) => {
@@ -59,14 +64,24 @@ const labels = computed(() =>
     }),
   ),
 );
-const throughputSeries = computed(() => [
-  { name: "Topic 实际生成", color: "#ff7048", values: measuredSamples.value.map((item) => item.producedDelta) },
-  { name: "Consumer 实际消费", color: "#58d996", values: measuredSamples.value.map((item) => item.consumedDelta) },
-]);
-const offsetSeries = computed(() => [
-  { name: "End Offset", color: "#4da3ff", values: measuredSamples.value.map((item) => item.endOffset) },
-  { name: "Committed Offset", color: "#ff7849", dash: "7 5", values: measuredSamples.value.map((item) => item.committedOffset) },
-]);
+const throughputSeries = computed(() => {
+  const series = [
+    { name: "Topic 实际生成", color: "#ff7048", values: measuredSamples.value.map((item) => item.producedDelta) },
+  ];
+  if (hasConsumerMetrics.value) {
+    series.push({ name: "Consumer 实际消费", color: "#58d996", values: measuredSamples.value.map((item) => item.consumedDelta) });
+  }
+  return series;
+});
+const offsetSeries = computed(() => {
+  const series: Array<{ name: string; color: string; values: number[]; dash?: string }> = [
+    { name: "End Offset", color: "#4da3ff", values: measuredSamples.value.map((item) => item.endOffset) },
+  ];
+  if (hasConsumerMetrics.value) {
+    series.push({ name: "Committed Offset", color: "#ff7849", dash: "7 5", values: measuredSamples.value.map((item) => item.committedOffset) });
+  }
+  return series;
+});
 const lagSeries = computed(() => [
   { name: "Consumer Lag", color: "#ffb057", values: measuredSamples.value.map((item) => item.lag) },
 ]);
@@ -86,13 +101,20 @@ function metricDisplay(value?: number) {
 async function loadOptions() {
   loadingOptions.value = true;
   error.value = "";
+  consumerOptionsError.value = "";
   try {
-    const [topicResponse, consumerResponse] = await Promise.all([
+    const [topicResult, consumerResult] = await Promise.allSettled([
       listTopics(connection.form),
       listConsumers(connection.form),
     ]);
-    topics.value = topicResponse.items;
-    consumers.value = consumerResponse.items;
+    if (topicResult.status === "rejected") throw topicResult.reason;
+    topics.value = topicResult.value.items;
+    if (consumerResult.status === "fulfilled") {
+      consumers.value = consumerResult.value.items;
+    } else {
+      consumers.value = [];
+      consumerOptionsError.value = "消费组列表不可用，仍可仅监控 Topic";
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "监控选项读取失败";
   } finally {
@@ -101,14 +123,14 @@ async function loadOptions() {
 }
 
 async function takeSnapshot() {
-  if (!selectedTopic.value || !selectedGroup.value || refreshing.value) return false;
+  if (!selectedTopic.value || refreshing.value) return false;
   refreshing.value = true;
   error.value = "";
   try {
     const snapshot = await fetchMetricSnapshot(
       connection.form,
       selectedTopic.value,
-      selectedGroup.value,
+      monitoredGroup.value,
     );
     const previous = samples.value[samples.value.length - 1];
     let producedDelta = 0;
@@ -120,7 +142,9 @@ async function takeSnapshot() {
         (new Date(snapshot.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000,
       );
       producedDelta = Math.max(0, snapshot.endOffset - previous.endOffset);
-      consumedDelta = Math.max(0, snapshot.committedOffset - previous.committedOffset);
+      if (snapshot.hasConsumer && previous.hasConsumer) {
+        consumedDelta = Math.max(0, snapshot.committedOffset - previous.committedOffset);
+      }
     }
     samples.value.push({ ...snapshot, producedDelta, consumedDelta, elapsedSeconds });
     samples.value = samples.value.slice(-21);
@@ -138,12 +162,13 @@ async function startMonitoring() {
     error.value = "请选择列表中存在的 Topic";
     return;
   }
-  if (!consumers.value.some((item) => item.groupId === selectedGroup.value)) {
-    error.value = "请选择一个 Consumer Group";
+  if (selectedGroup.value && !consumers.value.some((item) => item.groupId === selectedGroup.value)) {
+    error.value = "请选择列表中存在的 Consumer Group，或不选择以仅监控 Topic";
     return;
   }
   if (timer) window.clearInterval(timer);
   samples.value = [];
+  monitoredGroup.value = selectedGroup.value;
   monitoring.value = true;
   const started = await takeSnapshot();
   if (!started) {
@@ -189,9 +214,9 @@ onBeforeUnmount(() => {
         </datalist>
       </label>
       <label>
-        <span>选择 Consumer Group</span>
+        <span>Consumer Group（可选）</span>
         <select v-model="selectedGroup" :disabled="loadingOptions || monitoring">
-          <option value="" disabled>请选择消费组</option>
+          <option value="">{{ consumerOptionsError || "不选择，仅监控 Topic" }}</option>
           <option v-for="consumer in sortedConsumers" :key="consumer.groupId" :value="consumer.groupId">
             {{ consumer.groupId }}{{ consumer.state ? `（${consumer.state}）` : "" }}
           </option>
@@ -228,7 +253,7 @@ onBeforeUnmount(() => {
 
     <div v-if="error" class="notice error metrics-error"><strong>读取失败</strong><span>{{ error }}</span></div>
 
-    <div class="metric-kpis">
+    <div class="metric-kpis" :class="{ 'topic-only': !hasConsumerMetrics }">
       <article>
         <span>TOPIC 本周期实际生成（非平均）</span>
         <strong>{{ metricDisplay(latestMeasurement?.producedDelta) }}</strong>
@@ -237,7 +262,7 @@ onBeforeUnmount(() => {
         </small>
         <small v-else>等待完成首个 {{ samplingLabel }} 周期</small>
       </article>
-      <article>
+      <article v-if="hasConsumerMetrics">
         <span>消费组本周期实际提交（非平均）</span>
         <strong>{{ metricDisplay(latestMeasurement?.consumedDelta) }}</strong>
         <small v-if="latestMeasurement && previousSnapshot">
@@ -251,7 +276,7 @@ onBeforeUnmount(() => {
         <small v-if="latest">{{ latest.partitions }} 个分区合计</small>
         <small v-else>等待首次快照</small>
       </article>
-      <article :class="{ warning: latest !== undefined && latest.lag > 0 }">
+      <article v-if="hasConsumerMetrics" :class="{ warning: latest !== undefined && latest.lag > 0 }">
         <span>CONSUMER LAG</span>
         <strong>{{ metricDisplay(latest?.lag) }}</strong>
         <small>{{ latest ? "剩余未消费消息" : "等待首次快照" }}</small>
@@ -260,14 +285,14 @@ onBeforeUnmount(() => {
 
     <div class="chart-grid">
       <article class="chart-card">
-        <header><div><strong>生产与消费区间总数</strong><span>每个点是前一个 {{ samplingLabel }} 内的实际 Offset 增量，不是平均值</span></div><small>不换算、不放大</small></header>
+        <header><div><strong>{{ hasConsumerMetrics ? "生产与消费区间总数" : "Topic 生产区间总数" }}</strong><span>每个点是前一个 {{ samplingLabel }} 内的实际 Offset 增量，不是平均值</span></div><small>不换算、不放大</small></header>
         <LineChart :labels="labels" :series="throughputSeries" />
       </article>
       <article class="chart-card">
-        <header><div><strong>End Offset 与 Committed Offset</strong><span>所有分区 Offset 合计</span></div><small>每 {{ samplingLabel }} 采样</small></header>
+        <header><div><strong>{{ hasConsumerMetrics ? "End Offset 与 Committed Offset" : "End Offset" }}</strong><span>所有分区 Offset 合计</span></div><small>每 {{ samplingLabel }} 采样</small></header>
         <LineChart :labels="labels" :series="offsetSeries" :zero-based="false" />
       </article>
-      <article class="chart-card wide">
+      <article v-if="hasConsumerMetrics" class="chart-card wide">
         <header><div><strong>Consumer Lag</strong><span>End Offset − Committed Offset，所有分区合计</span></div><small>独立 Lag 趋势</small></header>
         <LineChart :labels="labels" :series="lagSeries" />
       </article>

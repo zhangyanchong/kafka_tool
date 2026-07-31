@@ -155,7 +155,8 @@ export interface MessageSearch {
 export interface MetricSnapshot {
   timestamp: string;
   topic: string;
-  groupId: string;
+  groupId?: string;
+  hasConsumer: boolean;
   partitions: number;
   startOffset: number;
   endOffset: number;

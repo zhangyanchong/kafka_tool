@@ -55,8 +55,8 @@ func NormalizeMetricSnapshot(req *MetricSnapshotRequest) error {
 	}
 	req.Topic = strings.TrimSpace(req.Topic)
 	req.GroupID = strings.TrimSpace(req.GroupID)
-	if req.Topic == "" || req.GroupID == "" {
-		return errors.New("请选择 Topic 和 Consumer Group")
+	if req.Topic == "" {
+		return errors.New("请选择 Topic")
 	}
 	return nil
 }
