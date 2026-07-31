@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "KafkaTool",
+  "outputfilename": "KafkaTool",
+  "frontend:install": "",
+  "frontend:build": "npm --prefix ../../frontend run build",
+  "frontend:dev:watcher": "npm --prefix ../../frontend run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Kafka Tool",
+    "email": ""
+  }
+}

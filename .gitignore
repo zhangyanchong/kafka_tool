@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+.dev/
+frontend/node_modules/
+frontend/dist/
+backend/bin/
+desktop/build/bin/
+desktop/frontend/dist/
+release/
+*.log
+.cache/
+*.tsbuildinfo
