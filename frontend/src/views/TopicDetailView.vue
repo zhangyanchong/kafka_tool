@@ -27,8 +27,10 @@ const route = useRoute();
 const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref<KafkaMessage[]>([]);
-const fromTime = ref("");
-const toTime = ref("");
+const fromDate = ref("");
+const fromClock = ref("00:00");
+const toDate = ref("");
+const toClock = ref("23:59");
 const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
@@ -79,8 +81,29 @@ const healthIssueLabels: Record<TopicHealthIssue, string> = {
   offline_replicas: "存在离线副本",
 };
 
-function toRFC3339(value: string) {
-  return value ? new Date(value).toISOString() : "";
+function toRFC3339(date: string, clock: string, fallbackClock: string) {
+  if (!date) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`日期格式必须是 YYYY-MM-DD，例如 2026-07-02：${date}`);
+  }
+  const value = new Date(`${date}T${clock || fallbackClock}:00`);
+  const [year, month, day] = date.split("-").map(Number);
+  if (
+    Number.isNaN(value.getTime()) ||
+    value.getFullYear() !== year ||
+    value.getMonth() + 1 !== month ||
+    value.getDate() !== day
+  ) {
+    throw new Error(`日期不存在或格式不正确：${date}`);
+  }
+  return value.toISOString();
+}
+
+function normalizeDateInput(value: string) {
+  const normalized = value.trim().replace(/[/.]/g, "-");
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return normalized;
+  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
 function formatTime(value: string) {
@@ -157,13 +180,24 @@ async function search() {
     return;
   }
   scanLimit.value = requestedScanLimit;
+  fromDate.value = normalizeDateInput(fromDate.value);
+  toDate.value = normalizeDateInput(toDate.value);
+  let normalizedFromTime = "";
+  let normalizedToTime = "";
+  try {
+    normalizedFromTime = toRFC3339(fromDate.value, fromClock.value, "00:00");
+    normalizedToTime = toRFC3339(toDate.value, toClock.value, "23:59");
+  } catch (reason) {
+    loadError.value = reason instanceof Error ? reason.message : "日期或时间格式不正确";
+    return;
+  }
   loading.value = true;
   loadError.value = "";
   expanded.value = new Set();
   try {
     const response = await searchTopicMessages(topic.value, connection.form, {
-      fromTime: toRFC3339(fromTime.value),
-      toTime: toRFC3339(toTime.value),
+      fromTime: normalizedFromTime,
+      toTime: normalizedToTime,
       keyword: keyword.value.trim(),
       limit: limit.value,
       scanLimit: scanLimit.value,
@@ -181,8 +215,10 @@ async function search() {
 }
 
 function resetSearch() {
-  fromTime.value = "";
-  toTime.value = "";
+  fromDate.value = "";
+  fromClock.value = "00:00";
+  toDate.value = "";
+  toClock.value = "23:59";
   keyword.value = "";
   limit.value = 20;
   scanLimit.value = 10000;
@@ -224,8 +260,10 @@ async function exportMessages() {
 onMounted(() => {
   // 时间范围是可选条件。显式清空可避免浏览器或桌面 WebView 恢复上次的值，
   // 让用户只在主动选择时间后才看到日期。
-  fromTime.value = "";
-  toTime.value = "";
+  fromDate.value = "";
+  fromClock.value = "00:00";
+  toDate.value = "";
+  toClock.value = "23:59";
   loadTopicHealth();
   search();
 });
@@ -337,25 +375,51 @@ onMounted(() => {
           <input v-model="keyword" placeholder="输入关键字，匹配消息 Key 或内容" />
         </div>
       </label>
-      <label>
+      <label class="datetime-label">
         <span>开始时间（可选）</span>
-        <input
-          v-model="fromTime"
-          type="datetime-local"
-          name="message-search-from-time"
-          autocomplete="off"
-          aria-label="开始时间（可选）"
-        />
+        <div class="datetime-fields">
+          <input
+            v-model="fromDate"
+            type="text"
+            name="message-search-from-date"
+            autocomplete="off"
+            inputmode="numeric"
+            placeholder="2026-07-02"
+            aria-label="开始日期（可选）"
+            @blur="fromDate = normalizeDateInput(fromDate)"
+          />
+          <i>-</i>
+          <input
+            v-model="fromClock"
+            type="time"
+            name="message-search-from-clock"
+            step="60"
+            aria-label="开始时分"
+          />
+        </div>
       </label>
-      <label>
+      <label class="datetime-label end-datetime-label">
         <span>结束时间（可选）</span>
-        <input
-          v-model="toTime"
-          type="datetime-local"
-          name="message-search-to-time"
-          autocomplete="off"
-          aria-label="结束时间（可选）"
-        />
+        <div class="datetime-fields">
+          <input
+            v-model="toDate"
+            type="text"
+            name="message-search-to-date"
+            autocomplete="off"
+            inputmode="numeric"
+            placeholder="2026-07-02"
+            aria-label="结束日期（可选）"
+            @blur="toDate = normalizeDateInput(toDate)"
+          />
+          <i>-</i>
+          <input
+            v-model="toClock"
+            type="time"
+            name="message-search-to-clock"
+            step="60"
+            aria-label="结束时分"
+          />
+        </div>
       </label>
       <label>
         <span>最多返回</span>

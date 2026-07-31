@@ -7,8 +7,10 @@ const route = useRoute();
 const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref([]);
-const fromTime = ref("");
-const toTime = ref("");
+const fromDate = ref("");
+const fromClock = ref("00:00");
+const toDate = ref("");
+const toClock = ref("23:59");
 const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
@@ -58,8 +60,8 @@ const healthIssueLabels = {
     under_replicated: "ISR 副本不足",
     offline_replicas: "存在离线副本",
 };
-function toRFC3339(value) {
-    return value ? new Date(value).toISOString() : "";
+function toRFC3339(date, clock, fallbackClock) {
+    return date ? new Date(`${date}T${clock || fallbackClock}:00`).toISOString() : "";
 }
 function formatTime(value) {
     const date = new Date(value);
@@ -138,8 +140,8 @@ async function search() {
     expanded.value = new Set();
     try {
         const response = await searchTopicMessages(topic.value, connection.form, {
-            fromTime: toRFC3339(fromTime.value),
-            toTime: toRFC3339(toTime.value),
+            fromTime: toRFC3339(fromDate.value, fromClock.value, "00:00"),
+            toTime: toRFC3339(toDate.value, toClock.value, "23:59"),
             keyword: keyword.value.trim(),
             limit: limit.value,
             scanLimit: scanLimit.value,
@@ -158,8 +160,10 @@ async function search() {
     }
 }
 function resetSearch() {
-    fromTime.value = "";
-    toTime.value = "";
+    fromDate.value = "";
+    fromClock.value = "00:00";
+    toDate.value = "";
+    toClock.value = "23:59";
     keyword.value = "";
     limit.value = 20;
     scanLimit.value = 10000;
@@ -200,8 +204,10 @@ async function exportMessages() {
 onMounted(() => {
     // 时间范围是可选条件。显式清空可避免浏览器或桌面 WebView 恢复上次的值，
     // 让用户只在主动选择时间后才看到日期。
-    fromTime.value = "";
-    toTime.value = "";
+    fromDate.value = "";
+    fromClock.value = "00:00";
+    toDate.value = "";
+    toClock.value = "23:59";
     loadTopicHealth();
     search();
 });
@@ -496,22 +502,44 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
 (__VLS_ctx.keyword);
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    type: "datetime-local",
-    name: "message-search-from-time",
-    autocomplete: "off",
-    'aria-label': "开始时间（可选）",
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "datetime-fields" },
 });
-(__VLS_ctx.fromTime);
+/** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "date",
+    name: "message-search-from-date",
+    autocomplete: "off",
+    'aria-label': "开始日期（可选）",
+});
+(__VLS_ctx.fromDate);
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "time",
+    name: "message-search-from-clock",
+    step: "60",
+    'aria-label': "开始时分",
+});
+(__VLS_ctx.fromClock);
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    type: "datetime-local",
-    name: "message-search-to-time",
-    autocomplete: "off",
-    'aria-label': "结束时间（可选）",
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "datetime-fields" },
 });
-(__VLS_ctx.toTime);
+/** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "date",
+    name: "message-search-to-date",
+    autocomplete: "off",
+    'aria-label': "结束日期（可选）",
+});
+(__VLS_ctx.toDate);
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "time",
+    name: "message-search-to-clock",
+    step: "60",
+    'aria-label': "结束时分",
+});
+(__VLS_ctx.toClock);
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
@@ -609,7 +637,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, fromTime, toTime, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, fromDate, fromClock, toDate, toClock, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },

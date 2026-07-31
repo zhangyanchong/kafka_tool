@@ -243,9 +243,13 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .partition-tag { display: inline-flex; min-width: 31px; height: 23px; align-items: center; justify-content: center; color: #8dbbf4; background: rgba(79,146,230,.09); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .muted { color: #5f6773; }
 .lag-warning { color: #ff815e !important; }
-.message-search-card { margin: 30px 0 16px; padding: 20px; display: grid; grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)); gap: 16px; background: #12161c; border: 1px solid #252b35; border-radius: 10px; }
+.message-search-card { margin: 30px 0 16px; padding: 20px; display: grid; grid-template-columns: minmax(240px, 1.7fr) repeat(2, minmax(220px, 1.25fr)) minmax(130px, .8fr) minmax(160px, 1fr); column-gap: 20px; row-gap: 16px; background: #12161c; border: 1px solid #252b35; border-radius: 10px; }
 .message-search-card label { align-content: start; }
 .message-search-card input, .message-search-card select { height: 40px; font-size: 11px; }
+.datetime-fields { display: grid; grid-template-columns: minmax(118px, 1fr) auto 76px; align-items: center; gap: 8px; }
+.datetime-fields input { min-width: 0; padding-inline: 9px; }
+.datetime-fields i { color: #717986; font-size: 11px; font-style: normal; }
+.end-datetime-label { margin-left: 6px; }
 .search-box.wide { width: 100%; }
 .message-search-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 9px; padding-top: 3px; }
 .clear-button, .search-button, .export-button { height: 38px; padding: 0 17px; border-radius: 7px; cursor: pointer; font-size: 11px; font-weight: 700; }
