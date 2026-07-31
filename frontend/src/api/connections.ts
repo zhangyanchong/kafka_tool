@@ -89,6 +89,20 @@ export interface ConsumerPartition {
   hasCommitted: boolean;
 }
 
+export interface ConsumerMemberAssignment {
+  topic: string;
+  partitions: number[];
+}
+
+export interface ConsumerMember {
+  memberId: string;
+  instanceId?: string;
+  clientId: string;
+  clientHost: string;
+  partitionCount: number;
+  assignments: ConsumerMemberAssignment[];
+}
+
 export interface KafkaMessage {
   partition: number;
   offset: number;
@@ -148,6 +162,11 @@ export function listConsumers(payload: ConnectionPayload) {
 export function listConsumerPartitions(groupId: string, payload: ConnectionPayload) {
   return postKafka<{
     groupId: string;
+    state?: string;
+    protocolType?: string;
+    protocol?: string;
+    membersAvailable: boolean;
+    members: ConsumerMember[];
     items: ConsumerPartition[];
     total: number;
     totalLag: number;

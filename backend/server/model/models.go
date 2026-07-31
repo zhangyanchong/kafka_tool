@@ -88,11 +88,30 @@ type PartitionItem struct {
 	HasCommitted    bool   `json:"hasCommitted"`
 }
 
+type ConsumerMemberAssignmentItem struct {
+	Topic      string  `json:"topic"`
+	Partitions []int32 `json:"partitions"`
+}
+
+type ConsumerMemberItem struct {
+	MemberID       string                         `json:"memberId"`
+	InstanceID     string                         `json:"instanceId,omitempty"`
+	ClientID       string                         `json:"clientId"`
+	ClientHost     string                         `json:"clientHost"`
+	PartitionCount int                            `json:"partitionCount"`
+	Assignments    []ConsumerMemberAssignmentItem `json:"assignments"`
+}
+
 type ConsumerPartitionsResponse struct {
-	GroupID  string          `json:"groupId"`
-	Items    []PartitionItem `json:"items"`
-	Total    int             `json:"total"`
-	TotalLag int64           `json:"totalLag"`
+	GroupID          string               `json:"groupId"`
+	State            string               `json:"state,omitempty"`
+	ProtocolType     string               `json:"protocolType,omitempty"`
+	Protocol         string               `json:"protocol,omitempty"`
+	MembersAvailable bool                 `json:"membersAvailable"`
+	Members          []ConsumerMemberItem `json:"members"`
+	Items            []PartitionItem      `json:"items"`
+	Total            int                  `json:"total"`
+	TotalLag         int64                `json:"totalLag"`
 }
 
 type MetricSnapshotResponse struct {

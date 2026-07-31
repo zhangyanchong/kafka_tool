@@ -29,17 +29,32 @@ func FindConsumers(ctx context.Context, client *kgo.Client) (model.ConsumerListR
 
 func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID string) (model.ConsumerPartitionsResponse, error) {
 	admin := kadm.NewClient(client)
+
+	response := model.ConsumerPartitionsResponse{
+		GroupID: groupID,
+		Members: []model.ConsumerMemberItem{},
+		Items:   []model.PartitionItem{},
+	}
+	assigned := make(kadm.TopicsSet)
+	described, describeErr := admin.DescribeGroups(ctx, groupID)
+	if describedGroup, ok := described[groupID]; describeErr == nil && ok && describedGroup.Err == nil {
+		response.State = describedGroup.State
+		response.ProtocolType = describedGroup.ProtocolType
+		response.Protocol = describedGroup.Protocol
+		response.MembersAvailable = true
+		response.Members = consumerMembersFromDescription(describedGroup)
+		assigned = describedGroup.AssignedPartitions()
+	}
+
 	committed, err := admin.FetchOffsets(ctx, groupID)
 	if err != nil {
 		return model.ConsumerPartitionsResponse{}, fmt.Errorf("读取消费组 Offset 失败：%s", FriendlyKafkaError(err))
 	}
-	topics := make([]string, 0, len(committed))
-	for topic := range committed {
-		topics = append(topics, topic)
-	}
-	sort.Strings(topics)
+
+	partitionSet := mergeConsumerPartitionSet(committed, assigned)
+	topics := partitionSetTopics(partitionSet)
 	if len(topics) == 0 {
-		return model.ConsumerPartitionsResponse{GroupID: groupID, Items: []model.PartitionItem{}, Total: 0, TotalLag: 0}, nil
+		return response, nil
 	}
 	starts, err := admin.ListStartOffsets(ctx, topics...)
 	if err != nil {
@@ -50,36 +65,88 @@ func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID str
 		return model.ConsumerPartitionsResponse{}, fmt.Errorf("读取分区结束 Offset 失败：%s", FriendlyKafkaError(err))
 	}
 
-	items := make([]model.PartitionItem, 0)
-	var totalLag int64
+	partitionSet.Each(func(topic string, partition int32) {
+		commit, commitOK := committed.Lookup(topic, partition)
+		start, startOK := starts.Lookup(topic, partition)
+		end, endOK := ends.Lookup(topic, partition)
+		if !startOK || !endOK || start.Err != nil || end.Err != nil {
+			return
+		}
+		hasCommitted := commitOK && commit.Err == nil && commit.At >= 0
+		committedOffset := int64(-1)
+		current := start.Offset
+		if hasCommitted {
+			committedOffset = commit.At
+			current = commit.At
+		}
+		lag := end.Offset - current
+		if lag < 0 {
+			lag = 0
+		}
+		response.TotalLag += lag
+		response.Items = append(response.Items, model.PartitionItem{
+			Topic: topic, Partition: partition, LogStartOffset: start.Offset,
+			CommittedOffset: committedOffset, LogEndOffset: end.Offset, Lag: lag, HasCommitted: hasCommitted,
+		})
+	})
+	sort.Slice(response.Items, func(i, j int) bool {
+		if response.Items[i].Topic == response.Items[j].Topic {
+			return response.Items[i].Partition < response.Items[j].Partition
+		}
+		return response.Items[i].Topic < response.Items[j].Topic
+	})
+	response.Total = len(response.Items)
+	return response, nil
+}
+
+func mergeConsumerPartitionSet(committed kadm.OffsetResponses, assigned kadm.TopicsSet) kadm.TopicsSet {
+	result := make(kadm.TopicsSet)
 	for topic, partitions := range committed {
-		for partition, commit := range partitions {
-			start, startOK := starts.Lookup(topic, partition)
-			end, endOK := ends.Lookup(topic, partition)
-			if commit.Err != nil || !startOK || !endOK || start.Err != nil || end.Err != nil {
-				continue
-			}
-			hasCommitted := commit.At >= 0
-			current := commit.At
-			if !hasCommitted {
-				current = start.Offset
-			}
-			lag := end.Offset - current
-			if lag < 0 {
-				lag = 0
-			}
-			totalLag += lag
-			items = append(items, model.PartitionItem{
-				Topic: topic, Partition: partition, LogStartOffset: start.Offset,
-				CommittedOffset: commit.At, LogEndOffset: end.Offset, Lag: lag, HasCommitted: hasCommitted,
-			})
+		for partition := range partitions {
+			result.Add(topic, partition)
 		}
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Topic == items[j].Topic {
-			return items[i].Partition < items[j].Partition
-		}
-		return items[i].Topic < items[j].Topic
+	assigned.Each(func(topic string, partition int32) {
+		result.Add(topic, partition)
 	})
-	return model.ConsumerPartitionsResponse{GroupID: groupID, Items: items, Total: len(items), TotalLag: totalLag}, nil
+	return result
+}
+
+func partitionSetTopics(partitions kadm.TopicsSet) []string {
+	topics := make([]string, 0, len(partitions))
+	for topic := range partitions {
+		topics = append(topics, topic)
+	}
+	sort.Strings(topics)
+	return topics
+}
+
+func consumerMembersFromDescription(group kadm.DescribedGroup) []model.ConsumerMemberItem {
+	members := make([]model.ConsumerMemberItem, 0, len(group.Members))
+	for _, member := range group.Members {
+		item := model.ConsumerMemberItem{
+			MemberID:    member.MemberID,
+			ClientID:    member.ClientID,
+			ClientHost:  member.ClientHost,
+			Assignments: []model.ConsumerMemberAssignmentItem{},
+		}
+		if member.InstanceID != nil {
+			item.InstanceID = *member.InstanceID
+		}
+		if assignment, ok := member.Assigned.AsConsumer(); ok {
+			for _, topic := range assignment.Topics {
+				partitions := append([]int32(nil), topic.Partitions...)
+				sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
+				item.PartitionCount += len(partitions)
+				item.Assignments = append(item.Assignments, model.ConsumerMemberAssignmentItem{
+					Topic: topic.Topic, Partitions: partitions,
+				})
+			}
+			sort.Slice(item.Assignments, func(i, j int) bool {
+				return item.Assignments[i].Topic < item.Assignments[j].Topic
+			})
+		}
+		members = append(members, item)
+	}
+	return members
 }
