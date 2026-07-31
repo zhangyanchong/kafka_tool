@@ -1,5 +1,13 @@
+import { computed } from "vue";
 import { useConnectionStore } from "@/stores/connection";
+import { applyTheme, currentTheme } from "@/theme";
 const connection = useConnectionStore();
+const connectionVerified = computed(() => connection.result?.success === true);
+const themeOptions = [
+    { value: "dark", label: "深色", color: "#151920" },
+    { value: "light", label: "浅色", color: "#f4f7f5" },
+    { value: "forest", label: "墨绿", color: "#123522" },
+];
 const __VLS_ctx = {
     ...{},
     ...{},
@@ -118,11 +126,13 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 });
 /** @type {__VLS_StyleScopedClasses['sidebar-foot']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "status-dot" },
+    ...{ class: (['status-dot', { unverified: !__VLS_ctx.connectionVerified }]) },
 });
+/** @type {__VLS_StyleScopedClasses['unverified']} */ ;
 /** @type {__VLS_StyleScopedClasses['status-dot']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.connectionVerified ? "连接已验证" : "连接未验证");
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 (__VLS_ctx.connection.form.brokers.length);
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -145,10 +155,38 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 });
 /** @type {__VLS_StyleScopedClasses['topbar-actions']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "connected-badge" },
+    ...{ class: "theme-switch" },
+    'aria-label': "界面主题",
 });
+/** @type {__VLS_StyleScopedClasses['theme-switch']} */ ;
+for (const [option] of __VLS_vFor((__VLS_ctx.themeOptions))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                return (__VLS_ctx.applyTheme(option.value));
+                // @ts-ignore
+                [connectionVerified, connectionVerified, connection, connection, themeOptions, applyTheme,];
+            } },
+        key: (option.value),
+        type: "button",
+        ...{ class: ({ active: __VLS_ctx.currentTheme === option.value }) },
+        'aria-pressed': (__VLS_ctx.currentTheme === option.value),
+        title: (`${option.label}主题`),
+    });
+    /** @type {__VLS_StyleScopedClasses['active']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({
+        ...{ style: ({ background: option.color }) },
+    });
+    (option.label);
+    // @ts-ignore
+    [currentTheme, currentTheme,];
+}
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: (['connected-badge', { unverified: !__VLS_ctx.connectionVerified }]) },
+});
+/** @type {__VLS_StyleScopedClasses['unverified']} */ ;
 /** @type {__VLS_StyleScopedClasses['connected-badge']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
+(__VLS_ctx.connectionVerified ? "VERIFIED" : "UNVERIFIED");
 let __VLS_18;
 /** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
 RouterLink;
@@ -164,7 +202,7 @@ const __VLS_20 = __VLS_19({
 /** @type {__VLS_StyleScopedClasses['switch-link']} */ ;
 const { default: __VLS_23 } = __VLS_21.slots;
 // @ts-ignore
-[connection, connection,];
+[connectionVerified, connectionVerified,];
 var __VLS_21;
 __VLS_asFunctionalElement1(__VLS_intrinsics.main, __VLS_intrinsics.main)({
     ...{ class: "page-content" },

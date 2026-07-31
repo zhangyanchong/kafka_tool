@@ -7,30 +7,60 @@ const topics = ref([]);
 const consumers = ref([]);
 const selectedTopic = ref("");
 const selectedGroup = ref("");
+const monitoredGroup = ref("");
 const samplingSeconds = ref(30);
 const samples = ref([]);
 const loadingOptions = ref(false);
 const refreshing = ref(false);
 const monitoring = ref(false);
 const error = ref("");
+const consumerOptionsError = ref("");
 let timer;
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
 const latestMeasurement = computed(() => measuredSamples.value[measuredSamples.value.length - 1]);
+const hasConsumerMetrics = computed(() => Boolean(samples.value.length ? monitoredGroup.value : selectedGroup.value));
+const sortedConsumers = computed(() => [...consumers.value].sort((left, right) => {
+    const rank = (state) => {
+        const normalized = state.trim().toLowerCase();
+        if (normalized === "stable")
+            return 0;
+        if (["preparingrebalance", "completingrebalance", "assigning", "reconciling"].includes(normalized))
+            return 1;
+        if (!normalized)
+            return 2;
+        if (normalized === "empty")
+            return 3;
+        if (normalized === "dead")
+            return 4;
+        return 2;
+    };
+    return rank(left.state) - rank(right.state) || left.groupId.localeCompare(right.groupId);
+}));
 const previousSnapshot = computed(() => samples.value.length >= 2 ? samples.value[samples.value.length - 2] : undefined);
 const labels = computed(() => measuredSamples.value.map((item) => new Date(item.timestamp).toLocaleTimeString("zh-CN", {
     hour12: false,
     minute: "2-digit",
     second: "2-digit",
 })));
-const throughputSeries = computed(() => [
-    { name: "Topic 实际生成", color: "#ff7048", values: measuredSamples.value.map((item) => item.producedDelta) },
-    { name: "Consumer 实际消费", color: "#58d996", values: measuredSamples.value.map((item) => item.consumedDelta) },
-]);
-const offsetSeries = computed(() => [
-    { name: "End Offset", color: "#4da3ff", values: measuredSamples.value.map((item) => item.endOffset) },
-    { name: "Committed Offset", color: "#ff7849", dash: "7 5", values: measuredSamples.value.map((item) => item.committedOffset) },
-]);
+const throughputSeries = computed(() => {
+    const series = [
+        { name: "Topic 实际生成", color: "#ff7048", values: measuredSamples.value.map((item) => item.producedDelta) },
+    ];
+    if (hasConsumerMetrics.value) {
+        series.push({ name: "Consumer 实际消费", color: "#58d996", values: measuredSamples.value.map((item) => item.consumedDelta) });
+    }
+    return series;
+});
+const offsetSeries = computed(() => {
+    const series = [
+        { name: "End Offset", color: "#4da3ff", values: measuredSamples.value.map((item) => item.endOffset) },
+    ];
+    if (hasConsumerMetrics.value) {
+        series.push({ name: "Committed Offset", color: "#ff7849", dash: "7 5", values: measuredSamples.value.map((item) => item.committedOffset) });
+    }
+    return series;
+});
 const lagSeries = computed(() => [
     { name: "Consumer Lag", color: "#ffb057", values: measuredSamples.value.map((item) => item.lag) },
 ]);
@@ -40,18 +70,30 @@ const samplingLabel = computed(() => {
     return `${samplingSeconds.value / 60} 分钟`;
 });
 function formatNumber(value) {
-    return (value ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+    return value.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+function metricDisplay(value) {
+    return value === undefined ? "待采样" : formatNumber(value);
 }
 async function loadOptions() {
     loadingOptions.value = true;
     error.value = "";
+    consumerOptionsError.value = "";
     try {
-        const [topicResponse, consumerResponse] = await Promise.all([
+        const [topicResult, consumerResult] = await Promise.allSettled([
             listTopics(connection.form),
             listConsumers(connection.form),
         ]);
-        topics.value = topicResponse.items;
-        consumers.value = consumerResponse.items;
+        if (topicResult.status === "rejected")
+            throw topicResult.reason;
+        topics.value = topicResult.value.items;
+        if (consumerResult.status === "fulfilled") {
+            consumers.value = consumerResult.value.items;
+        }
+        else {
+            consumers.value = [];
+            consumerOptionsError.value = "消费组列表不可用，仍可仅监控 Topic";
+        }
     }
     catch (reason) {
         error.value = reason instanceof Error ? reason.message : "监控选项读取失败";
@@ -61,12 +103,12 @@ async function loadOptions() {
     }
 }
 async function takeSnapshot() {
-    if (!selectedTopic.value || !selectedGroup.value || refreshing.value)
+    if (!selectedTopic.value || refreshing.value)
         return false;
     refreshing.value = true;
     error.value = "";
     try {
-        const snapshot = await fetchMetricSnapshot(connection.form, selectedTopic.value, selectedGroup.value);
+        const snapshot = await fetchMetricSnapshot(connection.form, selectedTopic.value, monitoredGroup.value);
         const previous = samples.value[samples.value.length - 1];
         let producedDelta = 0;
         let consumedDelta = 0;
@@ -74,7 +116,9 @@ async function takeSnapshot() {
         if (previous) {
             elapsedSeconds = Math.max(1, (new Date(snapshot.timestamp).getTime() - new Date(previous.timestamp).getTime()) / 1000);
             producedDelta = Math.max(0, snapshot.endOffset - previous.endOffset);
-            consumedDelta = Math.max(0, snapshot.committedOffset - previous.committedOffset);
+            if (snapshot.hasConsumer && previous.hasConsumer) {
+                consumedDelta = Math.max(0, snapshot.committedOffset - previous.committedOffset);
+            }
         }
         samples.value.push({ ...snapshot, producedDelta, consumedDelta, elapsedSeconds });
         samples.value = samples.value.slice(-21);
@@ -93,13 +137,14 @@ async function startMonitoring() {
         error.value = "请选择列表中存在的 Topic";
         return;
     }
-    if (!consumers.value.some((item) => item.groupId === selectedGroup.value)) {
-        error.value = "请选择一个 Consumer Group";
+    if (selectedGroup.value && !consumers.value.some((item) => item.groupId === selectedGroup.value)) {
+        error.value = "请选择列表中存在的 Consumer Group，或不选择以仅监控 Topic";
         return;
     }
     if (timer)
         window.clearInterval(timer);
     samples.value = [];
+    monitoredGroup.value = selectedGroup.value;
     monitoring.value = true;
     const started = await takeSnapshot();
     if (!started) {
@@ -113,6 +158,9 @@ function stopMonitoring() {
         window.clearInterval(timer);
     timer = undefined;
     monitoring.value = false;
+}
+function clearSamples() {
+    samples.value = [];
 }
 onMounted(loadOptions);
 onBeforeUnmount(() => {
@@ -182,16 +230,17 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
 });
 __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
     value: "",
-    disabled: true,
 });
-for (const [consumer] of __VLS_vFor((__VLS_ctx.consumers))) {
+(__VLS_ctx.consumerOptionsError || "不选择，仅监控 Topic");
+for (const [consumer] of __VLS_vFor((__VLS_ctx.sortedConsumers))) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
         key: (consumer.groupId),
         value: (consumer.groupId),
     });
     (consumer.groupId);
+    (consumer.state ? `（${consumer.state}）` : "");
     // @ts-ignore
-    [loadingOptions, monitoring, selectedGroup, consumers,];
+    [loadingOptions, monitoring, selectedGroup, consumerOptionsError, sortedConsumers,];
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "period-picker" },
@@ -216,6 +265,10 @@ for (const [period] of __VLS_vFor(([{ seconds: 30, label: '30 秒' }, { seconds:
     // @ts-ignore
     [monitoring, samplingSeconds,];
 }
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "metrics-actions" },
+});
+/** @type {__VLS_StyleScopedClasses['metrics-actions']} */ ;
 if (!__VLS_ctx.monitoring) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
         ...{ class: "monitor-button" },
@@ -238,6 +291,13 @@ else {
         type: "button",
     });
 }
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.clearSamples) },
+    ...{ class: "clear-chart-button" },
+    type: "button",
+    disabled: (__VLS_ctx.samples.length === 0),
+});
+/** @type {__VLS_StyleScopedClasses['clear-chart-button']} */ ;
 if (__VLS_ctx.error) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "notice error metrics-error" },
@@ -251,12 +311,14 @@ if (__VLS_ctx.error) {
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "metric-kpis" },
+    ...{ class: ({ 'topic-only': !__VLS_ctx.hasConsumerMetrics }) },
 });
 /** @type {__VLS_StyleScopedClasses['metric-kpis']} */ ;
+/** @type {__VLS_StyleScopedClasses['topic-only']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.formatNumber(__VLS_ctx.latestMeasurement?.producedDelta));
+(__VLS_ctx.metricDisplay(__VLS_ctx.latestMeasurement?.producedDelta));
 if (__VLS_ctx.latestMeasurement && __VLS_ctx.previousSnapshot) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
     (__VLS_ctx.formatNumber(__VLS_ctx.previousSnapshot.endOffset));
@@ -267,34 +329,44 @@ else {
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
     (__VLS_ctx.samplingLabel);
 }
+if (__VLS_ctx.hasConsumerMetrics) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.metricDisplay(__VLS_ctx.latestMeasurement?.consumedDelta));
+    if (__VLS_ctx.latestMeasurement && __VLS_ctx.previousSnapshot) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (__VLS_ctx.formatNumber(__VLS_ctx.previousSnapshot.committedOffset));
+        (__VLS_ctx.formatNumber(__VLS_ctx.latestMeasurement.committedOffset));
+        (Math.round(__VLS_ctx.latestMeasurement.elapsedSeconds));
+    }
+    else {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+        (__VLS_ctx.samplingLabel);
+    }
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.formatNumber(__VLS_ctx.latestMeasurement?.consumedDelta));
-if (__VLS_ctx.latestMeasurement && __VLS_ctx.previousSnapshot) {
+(__VLS_ctx.metricDisplay(__VLS_ctx.latest?.endOffset));
+if (__VLS_ctx.latest) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-    (__VLS_ctx.formatNumber(__VLS_ctx.previousSnapshot.committedOffset));
-    (__VLS_ctx.formatNumber(__VLS_ctx.latestMeasurement.committedOffset));
-    (Math.round(__VLS_ctx.latestMeasurement.elapsedSeconds));
+    (__VLS_ctx.latest.partitions);
 }
 else {
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-    (__VLS_ctx.samplingLabel);
 }
-__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.formatNumber(__VLS_ctx.latest?.endOffset));
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-(__VLS_ctx.latest?.partitions || 0);
-__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-    ...{ class: ({ warning: (__VLS_ctx.latest?.lag || 0) > 0 }) },
-});
-/** @type {__VLS_StyleScopedClasses['warning']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-(__VLS_ctx.formatNumber(__VLS_ctx.latest?.lag));
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+if (__VLS_ctx.hasConsumerMetrics) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: ({ warning: __VLS_ctx.latest !== undefined && __VLS_ctx.latest.lag > 0 }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['warning']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.metricDisplay(__VLS_ctx.latest?.lag));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    (__VLS_ctx.latest ? "剩余未消费消息" : "等待首次快照");
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "chart-grid" },
 });
@@ -306,6 +378,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.hasConsumerMetrics ? "生产与消费区间总数" : "Topic 生产区间总数");
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 (__VLS_ctx.samplingLabel);
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
@@ -326,6 +399,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.hasConsumerMetrics ? "End Offset 与 Committed Offset" : "End Offset");
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 (__VLS_ctx.samplingLabel);
@@ -341,32 +415,34 @@ const __VLS_7 = __VLS_6({
     series: (__VLS_ctx.offsetSeries),
     zeroBased: (false),
 }, ...__VLS_functionalComponentArgsRest(__VLS_6));
-__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-    ...{ class: "chart-card wide" },
-});
-/** @type {__VLS_StyleScopedClasses['chart-card']} */ ;
-/** @type {__VLS_StyleScopedClasses['wide']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
-const __VLS_10 = LineChart;
-// @ts-ignore
-const __VLS_11 = __VLS_asFunctionalComponent1(__VLS_10, new __VLS_10({
-    labels: (__VLS_ctx.labels),
-    series: (__VLS_ctx.lagSeries),
-}));
-const __VLS_12 = __VLS_11({
-    labels: (__VLS_ctx.labels),
-    series: (__VLS_ctx.lagSeries),
-}, ...__VLS_functionalComponentArgsRest(__VLS_11));
+if (__VLS_ctx.hasConsumerMetrics) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "chart-card wide" },
+    });
+    /** @type {__VLS_StyleScopedClasses['chart-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['wide']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    const __VLS_10 = LineChart;
+    // @ts-ignore
+    const __VLS_11 = __VLS_asFunctionalComponent1(__VLS_10, new __VLS_10({
+        labels: (__VLS_ctx.labels),
+        series: (__VLS_ctx.lagSeries),
+    }));
+    const __VLS_12 = __VLS_11({
+        labels: (__VLS_ctx.labels),
+        series: (__VLS_ctx.lagSeries),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_11));
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
     ...{ class: "sampling-note" },
 });
 /** @type {__VLS_StyleScopedClasses['sampling-note']} */ ;
 (__VLS_ctx.samplingLabel);
 // @ts-ignore
-[loadingOptions, monitoring, refreshing, refreshing, refreshing, stopMonitoring, error, error, formatNumber, formatNumber, formatNumber, formatNumber, formatNumber, formatNumber, formatNumber, formatNumber, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, previousSnapshot, previousSnapshot, previousSnapshot, previousSnapshot, samplingLabel, samplingLabel, samplingLabel, samplingLabel, samplingLabel, latest, latest, latest, latest, labels, labels, labels, throughputSeries, offsetSeries, lagSeries,];
+[loadingOptions, monitoring, refreshing, refreshing, refreshing, stopMonitoring, clearSamples, samples, error, error, hasConsumerMetrics, hasConsumerMetrics, hasConsumerMetrics, hasConsumerMetrics, hasConsumerMetrics, hasConsumerMetrics, metricDisplay, metricDisplay, metricDisplay, metricDisplay, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, latestMeasurement, previousSnapshot, previousSnapshot, previousSnapshot, previousSnapshot, formatNumber, formatNumber, formatNumber, formatNumber, samplingLabel, samplingLabel, samplingLabel, samplingLabel, samplingLabel, latest, latest, latest, latest, latest, latest, latest, labels, labels, labels, throughputSeries, offsetSeries, lagSeries,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

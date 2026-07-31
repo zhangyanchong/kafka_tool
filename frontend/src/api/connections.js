@@ -38,6 +38,9 @@ async function postKafka(path, payload) {
 export function listTopics(payload) {
     return postKafka("/api/v1/topics/list", payload);
 }
+export function fetchTopicHealth(topic, payload) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/health`, payload);
+}
 export function searchTopicMessages(topic, payload, search) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
         ...payload,

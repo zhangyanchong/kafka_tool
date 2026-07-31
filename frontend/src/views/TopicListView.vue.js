@@ -7,6 +7,7 @@ const keyword = ref("");
 const page = ref(1);
 const pageSize = 10;
 const topics = ref([]);
+const totalPartitions = ref(0);
 const loading = ref(false);
 const loadError = ref("");
 const connection = useConnectionStore();
@@ -28,12 +29,8 @@ async function loadTopics() {
     loadError.value = "";
     try {
         const response = await listTopics(connection.form);
-        topics.value = response.items.map((topic) => ({
-            name: topic.name,
-            partitions: topic.partitions,
-            internal: topic.internal,
-            status: "正常",
-        }));
+        topics.value = response.items;
+        totalPartitions.value = response.totalPartitions;
     }
     catch (reason) {
         loadError.value = reason instanceof Error ? reason.message : "Topic 读取失败";
@@ -97,6 +94,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.totalPartitions);
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
@@ -148,7 +146,7 @@ if (__VLS_ctx.filteredTopics.length) {
                         throw 0;
                     return (__VLS_ctx.openTopic(topic.name));
                     // @ts-ignore
-                    [loadTopics, loading, loading, topics, internalTopicCount, keyword, filteredTopics, filteredTopics, paginatedTopics, openTopic,];
+                    [loadTopics, loading, loading, topics, totalPartitions, internalTopicCount, keyword, filteredTopics, filteredTopics, paginatedTopics, openTopic,];
                 } },
             ...{ onKeydown: (...[$event]) => {
                     if (!(__VLS_ctx.filteredTopics.length))
@@ -175,10 +173,11 @@ if (__VLS_ctx.filteredTopics.length) {
         (topic.internal ? "内部" : "业务");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-            ...{ class: "row-status" },
+            ...{ class: (['row-status', { error: !topic.healthy }]) },
         });
+        /** @type {__VLS_StyleScopedClasses['error']} */ ;
         /** @type {__VLS_StyleScopedClasses['row-status']} */ ;
-        (topic.status);
+        (topic.healthy ? "正常" : `异常${topic.problemPartitions ? `（${topic.problemPartitions} 个分区）` : ""}`);
         // @ts-ignore
         [];
     }

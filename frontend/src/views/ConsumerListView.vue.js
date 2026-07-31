@@ -4,6 +4,7 @@ import AppPagination from "@/components/AppPagination.vue";
 import { listConsumers } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 const keyword = ref("");
+const statusFilter = ref("all");
 const page = ref(1);
 const pageSize = 10;
 const consumers = ref([]);
@@ -11,12 +12,57 @@ const loading = ref(false);
 const loadError = ref("");
 const connection = useConnectionStore();
 const router = useRouter();
-const filteredConsumers = computed(() => consumers.value.filter((consumer) => consumer.groupId.toLowerCase().includes(keyword.value.toLowerCase())));
+function normalizedState(consumer) {
+    return consumer.state.trim().toLowerCase();
+}
+function isIdleConsumer(consumer) {
+    const state = normalizedState(consumer);
+    return state === "empty" || state === "dead";
+}
+function isActiveConsumer(consumer) {
+    const state = normalizedState(consumer);
+    return [
+        "stable",
+        "preparingrebalance",
+        "completingrebalance",
+        "assigning",
+        "reconciling",
+    ].includes(state);
+}
+function consumerStateRank(consumer) {
+    const state = normalizedState(consumer);
+    if (state === "stable")
+        return 0;
+    if (isActiveConsumer(consumer))
+        return 1;
+    if (!state)
+        return 2;
+    if (state === "empty")
+        return 3;
+    return 4;
+}
+const filteredConsumers = computed(() => {
+    const search = keyword.value.trim().toLowerCase();
+    return consumers.value
+        .filter((consumer) => {
+        if (search && !consumer.groupId.toLowerCase().includes(search))
+            return false;
+        if (statusFilter.value === "active")
+            return isActiveConsumer(consumer);
+        if (statusFilter.value === "idle")
+            return isIdleConsumer(consumer);
+        return true;
+    })
+        .sort((left, right) => consumerStateRank(left) - consumerStateRank(right) ||
+        left.groupId.localeCompare(right.groupId));
+});
 const paginatedConsumers = computed(() => {
     const start = (page.value - 1) * pageSize;
     return filteredConsumers.value.slice(start, start + pageSize);
 });
-watch(keyword, () => { page.value = 1; });
+const stableConsumerCount = computed(() => consumers.value.filter((consumer) => consumer.state.toLowerCase() === "stable").length);
+const emptyConsumerCount = computed(() => consumers.value.filter((consumer) => consumer.state.toLowerCase() === "empty").length);
+watch([keyword, statusFilter], () => { page.value = 1; });
 watch(() => filteredConsumers.value.length, (total) => {
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
     if (page.value > lastPage)
@@ -27,14 +73,7 @@ async function loadConsumers() {
     loadError.value = "";
     try {
         const response = await listConsumers(connection.form);
-        consumers.value = response.items.map((consumer) => ({
-            groupId: consumer.groupId,
-            state: consumer.state || "Unknown",
-            members: 0,
-            topics: 0,
-            lag: 0,
-            consumePerMinute: 0,
-        }));
+        consumers.value = response.items;
     }
     catch (reason) {
         loadError.value = reason instanceof Error ? reason.message : "Consumer 读取失败";
@@ -98,10 +137,12 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.stableConsumerCount);
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.emptyConsumerCount);
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "data-card" },
@@ -111,6 +152,10 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "table-toolbar" },
 });
 /** @type {__VLS_StyleScopedClasses['table-toolbar']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "consumer-toolbar-controls" },
+});
+/** @type {__VLS_StyleScopedClasses['consumer-toolbar-controls']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "search-box" },
 });
@@ -130,14 +175,27 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
     placeholder: "搜索 Consumer Group",
 });
 (__VLS_ctx.keyword);
+__VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+    value: (__VLS_ctx.statusFilter),
+    ...{ class: "consumer-status-filter" },
+    'aria-label': "按消费组状态筛选",
+});
+/** @type {__VLS_StyleScopedClasses['consumer-status-filter']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: "all",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: "active",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: "idle",
+});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 (__VLS_ctx.filteredConsumers.length);
 if (__VLS_ctx.filteredConsumers.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.table, __VLS_intrinsics.table)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.thead, __VLS_intrinsics.thead)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
@@ -150,7 +208,7 @@ if (__VLS_ctx.filteredConsumers.length) {
                         throw 0;
                     return (__VLS_ctx.openConsumer(consumer.groupId));
                     // @ts-ignore
-                    [loadConsumers, loading, loading, consumers, keyword, filteredConsumers, filteredConsumers, paginatedConsumers, openConsumer,];
+                    [loadConsumers, loading, loading, consumers, stableConsumerCount, emptyConsumerCount, keyword, statusFilter, filteredConsumers, filteredConsumers, paginatedConsumers, openConsumer,];
                 } },
             ...{ onKeydown: (...[$event]) => {
                     if (!(__VLS_ctx.filteredConsumers.length))
@@ -174,19 +232,17 @@ if (__VLS_ctx.filteredConsumers.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
             ...{ class: "row-status" },
+            ...{ class: ({ inactive: __VLS_ctx.isIdleConsumer(consumer) }) },
         });
         /** @type {__VLS_StyleScopedClasses['row-status']} */ ;
-        (consumer.state);
+        /** @type {__VLS_StyleScopedClasses['inactive']} */ ;
+        (consumer.state || "未报告");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
-        (consumer.members);
+        (consumer.protocolType || "未报告");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
-        (consumer.topics);
-        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
-        (consumer.consumePerMinute.toLocaleString());
-        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
-        (consumer.lag.toLocaleString());
+        (consumer.groupType || "未报告");
         // @ts-ignore
-        [];
+        [isIdleConsumer,];
     }
 }
 else {

@@ -6,7 +6,6 @@ frontend/dist/
 backend/bin/
 desktop/build/bin/
 desktop/frontend/dist/
-release/
 *.log
 .cache/
 *.tsbuildinfo

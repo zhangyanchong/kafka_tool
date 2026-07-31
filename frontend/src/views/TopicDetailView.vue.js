@@ -1,6 +1,6 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { searchTopicMessages } from "@/api/connections";
+import { fetchTopicHealth, searchTopicMessages, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 const route = useRoute();
@@ -20,15 +20,44 @@ const expanded = ref(new Set());
 const page = ref(1);
 const pageSize = 10;
 const copied = ref("");
+const topicHealth = ref(null);
+const healthLoading = ref(false);
+const healthError = ref("");
+const healthCollapsed = ref(true);
+const showAllPartitions = ref(false);
+const healthPage = ref(1);
+const healthPageSize = 10;
 const paginatedMessages = computed(() => {
     const start = (page.value - 1) * pageSize;
     return messages.value.slice(start, start + pageSize);
+});
+const visibleHealthPartitions = computed(() => {
+    const items = topicHealth.value?.items || [];
+    return showAllPartitions.value ? items : items.filter((item) => !item.healthy);
+});
+const paginatedHealthPartitions = computed(() => {
+    const start = (healthPage.value - 1) * healthPageSize;
+    return visibleHealthPartitions.value.slice(start, start + healthPageSize);
 });
 watch(() => messages.value.length, (total) => {
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
     if (page.value > lastPage)
         page.value = lastPage;
 });
+watch(showAllPartitions, () => {
+    healthPage.value = 1;
+});
+watch(() => visibleHealthPartitions.value.length, () => {
+    const lastPage = Math.max(1, Math.ceil(visibleHealthPartitions.value.length / healthPageSize));
+    if (healthPage.value > lastPage)
+        healthPage.value = lastPage;
+});
+const healthIssueLabels = {
+    partition_error: "Metadata 错误",
+    leader_unavailable: "Leader 不可用",
+    under_replicated: "ISR 副本不足",
+    offline_replicas: "存在离线副本",
+};
 function toRFC3339(value) {
     return value ? new Date(value).toISOString() : "";
 }
@@ -46,6 +75,30 @@ function preview(value) {
 }
 function messageId(message) {
     return `${message.partition}-${message.offset}`;
+}
+function healthMetric(value) {
+    if (value !== undefined)
+        return value.toLocaleString();
+    return healthLoading.value ? "读取中" : "不可用";
+}
+function brokerList(values) {
+    return values.length ? values.join(", ") : "无";
+}
+async function loadTopicHealth() {
+    if (healthLoading.value)
+        return;
+    healthLoading.value = true;
+    healthError.value = "";
+    try {
+        topicHealth.value = await fetchTopicHealth(topic.value, connection.form);
+    }
+    catch (reason) {
+        topicHealth.value = null;
+        healthError.value = reason instanceof Error ? reason.message : "Topic 健康状态读取失败";
+    }
+    finally {
+        healthLoading.value = false;
+    }
 }
 function toggleMessage(message) {
     const next = new Set(expanded.value);
@@ -149,6 +202,7 @@ onMounted(() => {
     // 让用户只在主动选择时间后才看到日期。
     fromTime.value = "";
     toTime.value = "";
+    loadTopicHealth();
     search();
 });
 const __VLS_ctx = {
@@ -190,6 +244,226 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({});
 (__VLS_ctx.topic);
 __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "summary-grid topic-health-summary" },
+});
+/** @type {__VLS_StyleScopedClasses['summary-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['topic-health-summary']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.healthMetric(__VLS_ctx.topicHealth?.partitions));
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.healthMetric(__VLS_ctx.topicHealth?.healthyPartitions));
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+    ...{ class: ({ warning: (__VLS_ctx.topicHealth?.problemPartitions || 0) > 0 }) },
+});
+/** @type {__VLS_StyleScopedClasses['warning']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.healthMetric(__VLS_ctx.topicHealth?.problemPartitions));
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+    ...{ class: ({ warning: (__VLS_ctx.topicHealth?.noLeaderPartitions || 0) > 0 }) },
+});
+/** @type {__VLS_StyleScopedClasses['warning']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.healthMetric(__VLS_ctx.topicHealth?.noLeaderPartitions));
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "data-card topic-health-card" },
+    ...{ class: ({ problem: (__VLS_ctx.topicHealth?.problemPartitions || 0) > 0 }) },
+});
+/** @type {__VLS_StyleScopedClasses['data-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['topic-health-card']} */ ;
+/** @type {__VLS_StyleScopedClasses['problem']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "table-toolbar topic-health-toolbar" },
+});
+/** @type {__VLS_StyleScopedClasses['table-toolbar']} */ ;
+/** @type {__VLS_StyleScopedClasses['topic-health-toolbar']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "topic-health-actions" },
+});
+/** @type {__VLS_StyleScopedClasses['topic-health-actions']} */ ;
+if (__VLS_ctx.healthLoading) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+}
+else if (__VLS_ctx.healthError) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+}
+else if (__VLS_ctx.topicHealth?.problemPartitions) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "health-problem" },
+    });
+    /** @type {__VLS_StyleScopedClasses['health-problem']} */ ;
+    (__VLS_ctx.topicHealth.problemPartitions);
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "health-ok" },
+    });
+    /** @type {__VLS_StyleScopedClasses['health-ok']} */ ;
+}
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.loadTopicHealth) },
+    type: "button",
+    disabled: (__VLS_ctx.healthLoading),
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
+            // @ts-ignore
+            [topic, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+        } },
+    type: "button",
+    'aria-expanded': (!__VLS_ctx.healthCollapsed),
+});
+(__VLS_ctx.healthCollapsed ? "展开" : "收起");
+if (!__VLS_ctx.healthCollapsed) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "health-filter-bar" },
+    });
+    /** @type {__VLS_StyleScopedClasses['health-filter-bar']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(!__VLS_ctx.healthCollapsed))
+                    throw 0;
+                return (__VLS_ctx.showAllPartitions = false);
+                // @ts-ignore
+                [healthCollapsed, healthCollapsed, healthCollapsed, showAllPartitions,];
+            } },
+        type: "button",
+        ...{ class: ({ active: !__VLS_ctx.showAllPartitions }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['active']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(!__VLS_ctx.healthCollapsed))
+                    throw 0;
+                return (__VLS_ctx.showAllPartitions = true);
+                // @ts-ignore
+                [showAllPartitions, showAllPartitions,];
+            } },
+        type: "button",
+        ...{ class: ({ active: __VLS_ctx.showAllPartitions }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['active']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    (__VLS_ctx.visibleHealthPartitions.length);
+    if (__VLS_ctx.healthError) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "member-empty" },
+        });
+        /** @type {__VLS_StyleScopedClasses['member-empty']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.healthError);
+    }
+    else if (__VLS_ctx.paginatedHealthPartitions.length) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.table, __VLS_intrinsics.table)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.thead, __VLS_intrinsics.thead)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.tbody, __VLS_intrinsics.tbody)({});
+        for (const [partition] of __VLS_vFor((__VLS_ctx.paginatedHealthPartitions))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({
+                key: (partition.partition),
+                ...{ class: ({ 'health-problem-row': !partition.healthy }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['health-problem-row']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "partition-tag" },
+            });
+            /** @type {__VLS_StyleScopedClasses['partition-tag']} */ ;
+            (partition.partition);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            if (partition.leader >= 0) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (partition.leader);
+            }
+            else {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "health-problem" },
+                });
+                /** @type {__VLS_StyleScopedClasses['health-problem']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            (__VLS_ctx.brokerList(partition.replicas));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            (__VLS_ctx.brokerList(partition.isr));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            (__VLS_ctx.brokerList(partition.offlineReplicas));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+            if (partition.healthy) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "health-status healthy" },
+                });
+                /** @type {__VLS_StyleScopedClasses['health-status']} */ ;
+                /** @type {__VLS_StyleScopedClasses['healthy']} */ ;
+            }
+            else {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "health-issues" },
+                });
+                /** @type {__VLS_StyleScopedClasses['health-issues']} */ ;
+                for (const [issue] of __VLS_vFor((partition.issues))) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                        key: (issue),
+                    });
+                    (__VLS_ctx.healthIssueLabels[issue]);
+                    // @ts-ignore
+                    [healthError, healthError, showAllPartitions, visibleHealthPartitions, paginatedHealthPartitions, paginatedHealthPartitions, brokerList, brokerList, brokerList, healthIssueLabels,];
+                }
+                if (partition.errorMessage) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+                    (partition.errorMessage);
+                }
+            }
+            // @ts-ignore
+            [];
+        }
+    }
+    else if (!__VLS_ctx.healthLoading) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "member-empty" },
+        });
+        /** @type {__VLS_StyleScopedClasses['member-empty']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.showAllPartitions ? "没有分区 Metadata" : "没有异常分区");
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        (__VLS_ctx.showAllPartitions ? "Kafka 没有返回可展示的分区信息。" : "当前 Topic 的 Leader、ISR 和副本状态正常。");
+    }
+    if (__VLS_ctx.visibleHealthPartitions.length > __VLS_ctx.healthPageSize) {
+        const __VLS_6 = AppPagination;
+        // @ts-ignore
+        const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
+            page: (__VLS_ctx.healthPage),
+            pageSize: (__VLS_ctx.healthPageSize),
+            total: (__VLS_ctx.visibleHealthPartitions.length),
+        }));
+        const __VLS_8 = __VLS_7({
+            page: (__VLS_ctx.healthPage),
+            pageSize: (__VLS_ctx.healthPageSize),
+            total: (__VLS_ctx.visibleHealthPartitions.length),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_7));
+    }
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
     ...{ onSubmit: (__VLS_ctx.search) },
     ...{ class: "message-search-card" },
@@ -335,7 +609,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [topic, search, keyword, fromTime, toTime, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, fromTime, toTime, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },
@@ -408,18 +682,18 @@ if (__VLS_ctx.messages.length) {
         // @ts-ignore
         [messageId, messageId, copied, expanded,];
     }
-    const __VLS_6 = AppPagination;
+    const __VLS_11 = AppPagination;
     // @ts-ignore
-    const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
+    const __VLS_12 = __VLS_asFunctionalComponent1(__VLS_11, new __VLS_11({
         page: (__VLS_ctx.page),
         pageSize: (__VLS_ctx.pageSize),
         total: (__VLS_ctx.messages.length),
     }));
-    const __VLS_8 = __VLS_7({
+    const __VLS_13 = __VLS_12({
         page: (__VLS_ctx.page),
         pageSize: (__VLS_ctx.pageSize),
         total: (__VLS_ctx.messages.length),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_7));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_12));
 }
 else if (!__VLS_ctx.loading && !__VLS_ctx.loadError) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
