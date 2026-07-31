@@ -12,6 +12,7 @@ func New(handler *controller.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/health", handler.Health)
 	mux.HandleFunc("POST /api/v1/connections/test", handler.TestConnection)
 	mux.HandleFunc("POST /api/v1/topics/list", handler.ListTopics)
+	mux.HandleFunc("POST /api/v1/topics/{topic}/health", handler.TopicHealth)
 	mux.HandleFunc("POST /api/v1/topics/{topic}/messages/search", handler.SearchTopicMessages)
 	mux.HandleFunc("POST /api/v1/consumers/list", handler.ListConsumers)
 	mux.HandleFunc("POST /api/v1/consumers/{groupID}/partitions", handler.ListConsumerPartitions)

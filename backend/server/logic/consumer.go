@@ -72,7 +72,9 @@ func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID str
 		if !startOK || !endOK || start.Err != nil || end.Err != nil {
 			return
 		}
-		hasCommitted := commitOK && commit.Err == nil && commit.At >= 0
+		hasCommitted, offsetStatus, errorMessage := consumerOffsetStatus(
+			commit, commitOK, start.Offset, end.Offset,
+		)
 		committedOffset := int64(-1)
 		current := start.Offset
 		if hasCommitted {
@@ -87,6 +89,7 @@ func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID str
 		response.Items = append(response.Items, model.PartitionItem{
 			Topic: topic, Partition: partition, LogStartOffset: start.Offset,
 			CommittedOffset: committedOffset, LogEndOffset: end.Offset, Lag: lag, HasCommitted: hasCommitted,
+			OffsetStatus: offsetStatus, ErrorMessage: errorMessage,
 		})
 	})
 	sort.Slice(response.Items, func(i, j int) bool {
@@ -97,6 +100,26 @@ func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID str
 	})
 	response.Total = len(response.Items)
 	return response, nil
+}
+
+func consumerOffsetStatus(commit kadm.OffsetResponse, exists bool, start, end int64) (bool, string, string) {
+	if !exists {
+		return false, "uncommitted", ""
+	}
+	if commit.Err != nil {
+		return false, "commit_error", FriendlyKafkaError(commit.Err)
+	}
+	if commit.At < 0 {
+		return false, "uncommitted", ""
+	}
+	switch {
+	case commit.At < start:
+		return true, "before_start", ""
+	case commit.At > end:
+		return true, "after_end", ""
+	default:
+		return true, "normal", ""
+	}
 }
 
 func mergeConsumerPartitionSet(committed kadm.OffsetResponses, assigned kadm.TopicsSet) kadm.TopicsSet {

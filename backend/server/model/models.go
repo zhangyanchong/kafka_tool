@@ -49,6 +49,30 @@ type TopicListResponse struct {
 	TotalPartitions int         `json:"totalPartitions"`
 }
 
+type TopicPartitionHealthItem struct {
+	Partition       int32    `json:"partition"`
+	Leader          int32    `json:"leader"`
+	LeaderEpoch     int32    `json:"leaderEpoch"`
+	Replicas        []int32  `json:"replicas"`
+	ISR             []int32  `json:"isr"`
+	OfflineReplicas []int32  `json:"offlineReplicas"`
+	Healthy         bool     `json:"healthy"`
+	Issues          []string `json:"issues"`
+	ErrorMessage    string   `json:"errorMessage,omitempty"`
+}
+
+type TopicHealthResponse struct {
+	Topic                     string                     `json:"topic"`
+	Internal                  bool                       `json:"internal"`
+	Partitions                int                        `json:"partitions"`
+	HealthyPartitions         int                        `json:"healthyPartitions"`
+	ProblemPartitions         int                        `json:"problemPartitions"`
+	NoLeaderPartitions        int                        `json:"noLeaderPartitions"`
+	UnderReplicatedPartitions int                        `json:"underReplicatedPartitions"`
+	OfflineReplicaPartitions  int                        `json:"offlineReplicaPartitions"`
+	Items                     []TopicPartitionHealthItem `json:"items"`
+}
+
 type MessageItem struct {
 	Partition int32  `json:"partition"`
 	Offset    int64  `json:"offset"`
@@ -86,6 +110,8 @@ type PartitionItem struct {
 	LogEndOffset    int64  `json:"logEndOffset"`
 	Lag             int64  `json:"lag"`
 	HasCommitted    bool   `json:"hasCommitted"`
+	OffsetStatus    string `json:"offsetStatus"`
+	ErrorMessage    string `json:"errorMessage,omitempty"`
 }
 
 type ConsumerMemberAssignmentItem struct {

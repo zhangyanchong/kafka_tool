@@ -72,6 +72,36 @@ export interface KafkaTopic {
   problemPartitions: number;
 }
 
+export type TopicHealthIssue =
+  | "partition_error"
+  | "leader_unavailable"
+  | "under_replicated"
+  | "offline_replicas";
+
+export interface TopicPartitionHealth {
+  partition: number;
+  leader: number;
+  leaderEpoch: number;
+  replicas: number[];
+  isr: number[];
+  offlineReplicas: number[];
+  healthy: boolean;
+  issues: TopicHealthIssue[];
+  errorMessage?: string;
+}
+
+export interface TopicHealth {
+  topic: string;
+  internal: boolean;
+  partitions: number;
+  healthyPartitions: number;
+  problemPartitions: number;
+  noLeaderPartitions: number;
+  underReplicatedPartitions: number;
+  offlineReplicaPartitions: number;
+  items: TopicPartitionHealth[];
+}
+
 export interface KafkaConsumer {
   groupId: string;
   state: string;
@@ -87,6 +117,8 @@ export interface ConsumerPartition {
   logEndOffset: number;
   lag: number;
   hasCommitted: boolean;
+  offsetStatus: "normal" | "uncommitted" | "before_start" | "after_end" | "commit_error";
+  errorMessage?: string;
 }
 
 export interface ConsumerMemberAssignment {
@@ -134,6 +166,13 @@ export interface MetricSnapshot {
 export function listTopics(payload: ConnectionPayload) {
   return postKafka<{ items: KafkaTopic[]; total: number; totalPartitions: number }>(
     "/api/v1/topics/list",
+    payload,
+  );
+}
+
+export function fetchTopicHealth(topic: string, payload: ConnectionPayload) {
+  return postKafka<TopicHealth>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/health`,
     payload,
   );
 }

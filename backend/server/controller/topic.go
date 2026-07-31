@@ -25,6 +25,26 @@ func (h *Handler) ListTopics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *Handler) TopicHealth(w http.ResponseWriter, r *http.Request) {
+	topic := strings.TrimSpace(r.PathValue("topic"))
+	if topic == "" {
+		writeJSON(w, http.StatusBadRequest, model.APIResponse{Message: "Topic 不能为空"})
+		return
+	}
+	_, client, ctx, cancel, err := openClientFromRequest(w, r)
+	if err != nil {
+		return
+	}
+	defer cancel()
+	defer client.Close()
+	response, err := logic.FindTopicHealth(ctx, client, topic)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, model.APIResponse{Message: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (h *Handler) SearchTopicMessages(w http.ResponseWriter, r *http.Request) {
 	topic := strings.TrimSpace(r.PathValue("topic"))
 	if topic == "" {

@@ -205,6 +205,41 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .member-empty p { margin: 7px 0 0; color: #626b78; font-size: 10px; }
 .assignment-cell { max-width: 440px; overflow-wrap: anywhere; line-height: 1.7; }
 .partition-card { margin-bottom: 4px; }
+.partition-toolbar-controls { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.partition-toolbar-controls .search-box { width: min(290px, 32vw); }
+.partition-toolbar-controls select { width: 128px; height: 38px; padding: 0 9px; color: #9da5b1; background: #0e1116; border: 1px solid #292f39; border-radius: 7px; font-size: 9px; }
+.partition-toolbar-controls select:last-child { width: 122px; }
+.offset-anomaly-row { background: rgba(242,96,57,.035); }
+.offset-status { padding: 4px 7px; display: inline-flex; border-radius: 9px; font-size: 8px; white-space: nowrap; }
+.offset-status.normal { color: #3da56d; background: rgba(55,191,119,.09); }
+.offset-status.uncommitted { color: #78818e; background: rgba(105,113,126,.1); }
+.offset-status.anomaly { color: #f16f4c; background: rgba(242,96,57,.1); }
+.topic-health-summary { grid-template-columns: repeat(4, 1fr); }
+.topic-health-summary article.warning { border-color: rgba(242,96,57,.38); background: linear-gradient(145deg, rgba(242,96,57,.08), #11141a); }
+.topic-health-summary article.warning strong { color: #ff7652; }
+.topic-health-card { min-height: 0; margin-bottom: 18px; }
+.topic-health-card.problem { border-color: rgba(242,96,57,.3); }
+.topic-health-toolbar > div:first-child { display: grid; gap: 5px; }
+.topic-health-toolbar > div:first-child > strong { color: #dfe4eb; font-size: 12px; }
+.topic-health-toolbar > div:first-child > small { color: #626b78; font-size: 9px; }
+.topic-health-actions { display: flex; align-items: center; gap: 9px; }
+.topic-health-actions > span { margin-right: 3px; color: #69717e; font-size: 9px; }
+.topic-health-actions button { height: 30px; padding: 0 9px; color: #9da5b1; background: #171b22; border: 1px solid #2a303a; border-radius: 6px; cursor: pointer; font-size: 9px; }
+.topic-health-actions button:hover:not(:disabled) { color: #fff; border-color: #434a56; }
+.topic-health-actions button:disabled { cursor: wait; opacity: .5; }
+.health-filter-bar { min-height: 54px; padding: 9px 17px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #242a34; }
+.health-filter-bar > div { padding: 3px; display: flex; background: #0e1116; border: 1px solid #292f3a; border-radius: 7px; }
+.health-filter-bar button { height: 28px; padding: 0 11px; color: #707987; background: transparent; border: 0; border-radius: 5px; cursor: pointer; font-size: 9px; }
+.health-filter-bar button.active { color: #fff; background: #282e38; }
+.health-filter-bar > span { color: #606875; font-size: 9px; }
+.health-problem { color: #f26542 !important; font-weight: 600; }
+.health-ok { color: #299b61 !important; font-weight: 600; }
+.health-problem-row { background: rgba(242,96,57,.025); }
+.health-status { padding: 4px 8px; border-radius: 10px; font-size: 9px; }
+.health-status.healthy { color: #42a76f; background: rgba(55,191,119,.09); }
+.health-issues { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.health-issues > span { padding: 4px 7px; color: #f47856; background: rgba(242,96,57,.09); border-radius: 9px; font-size: 8px; white-space: nowrap; }
+.health-issues > small { width: 100%; color: #8f665c; font-size: 8px; }
 .partition-tag { display: inline-flex; min-width: 31px; height: 23px; align-items: center; justify-content: center; color: #8dbbf4; background: rgba(79,146,230,.09); border-radius: 5px; font-size: 9px; font-weight: 700; }
 .muted { color: #5f6773; }
 .lag-warning { color: #ff815e !important; }
@@ -336,6 +371,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="light"] .refresh-button,
 :root[data-theme="light"] .collapse-button,
 :root[data-theme="light"] .clear-chart-button,
+:root[data-theme="light"] .topic-health-actions button,
 :root[data-theme="light"] .monitor-controls button,
 :root[data-theme="light"] .message-content button,
 :root[data-theme="light"] .pagination-controls button {
@@ -348,6 +384,10 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="light"] .theme-switch button:hover { color: #17231c; }
 :root[data-theme="light"] .theme-switch button:focus-visible { outline-color: rgba(191,75,42,.5); }
 :root[data-theme="light"] .theme-switch button.active { color: #17231c; background: #fff; box-shadow: 0 1px 4px rgba(26,52,36,.12); }
+:root[data-theme="light"] .health-filter-bar > div { background: #f5f8f6; border-color: #d1dbd4; }
+:root[data-theme="light"] .health-filter-bar button { color: #66756c; }
+:root[data-theme="light"] .health-filter-bar button.active { color: #17231c; background: #fff; box-shadow: 0 1px 3px rgba(26,52,36,.12); }
+:root[data-theme="light"] .topic-health-summary article.warning { background: linear-gradient(145deg, rgba(242,96,57,.07), #fff); }
 :root[data-theme="light"] .main-nav a { color: #627168; }
 :root[data-theme="light"] .main-nav a:hover,
 :root[data-theme="light"] .clickable-row:hover,
@@ -426,6 +466,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="forest"] .refresh-button,
 :root[data-theme="forest"] .collapse-button,
 :root[data-theme="forest"] .clear-chart-button,
+:root[data-theme="forest"] .topic-health-actions button,
 :root[data-theme="forest"] .monitor-controls button,
 :root[data-theme="forest"] .message-content button,
 :root[data-theme="forest"] .pagination-controls button {
@@ -438,6 +479,10 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="forest"] .theme-switch button:hover { color: #dcebe1; }
 :root[data-theme="forest"] .theme-switch button:focus-visible { outline-color: rgba(79,180,119,.6); }
 :root[data-theme="forest"] .theme-switch button.active { color: #eaf5ed; background: #173523; }
+:root[data-theme="forest"] .health-filter-bar > div { background: #09150e; border-color: #244331; }
+:root[data-theme="forest"] .health-filter-bar button { color: #71877a; }
+:root[data-theme="forest"] .health-filter-bar button.active { color: #eaf5ed; background: #173523; }
+:root[data-theme="forest"] .topic-health-summary article.warning { background: linear-gradient(145deg, rgba(242,96,57,.08), #0d1b13); }
 :root[data-theme="forest"] .brand-mark i,
 :root[data-theme="forest"] .submit,
 :root[data-theme="forest"] .search-button,
@@ -499,6 +544,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
   .topbar-actions { gap: 9px; }
   .theme-switch button { padding: 0 6px; }
   .summary-grid { grid-template-columns: 1fr; }
+  .topic-health-summary { grid-template-columns: 1fr 1fr; }
   .pagination { grid-template-columns: 1fr auto; }
   .pagination > span:last-child { display: none; }
   .message-search-card { grid-template-columns: 1fr 1fr; }
@@ -506,13 +552,20 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
   .metrics-filter { grid-template-columns: 1fr 1fr; }
   .metric-kpis { grid-template-columns: 1fr 1fr; }
   .chart-grid { grid-template-columns: 1fr; }
+  .partition-toolbar-controls { flex-wrap: wrap; }
 }
 
 @media (max-width: 520px) {
   .grid { grid-template-columns: 1fr; }
+  .topic-health-summary { grid-template-columns: 1fr; }
   .consumer-toolbar-controls { width: 100%; align-items: stretch; flex-direction: column; }
   .consumer-toolbar-controls .search-box, .consumer-status-filter { width: 100%; }
   .table-toolbar:has(.consumer-toolbar-controls) { align-items: flex-end; }
+  .partition-toolbar-controls { width: 100%; align-items: stretch; flex-direction: column; }
+  .partition-toolbar-controls .search-box,
+  .partition-toolbar-controls select,
+  .partition-toolbar-controls select:last-child { width: 100%; }
+  .table-toolbar:has(.partition-toolbar-controls) { align-items: flex-end; }
   .message-search-card { grid-template-columns: 1fr; }
   .content-search { grid-column: auto; }
   .metrics-filter, .metric-kpis { grid-template-columns: 1fr; }

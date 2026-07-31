@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { searchTopicMessages, type KafkaMessage } from "@/api/connections";
+import {
+  fetchTopicHealth,
+  searchTopicMessages,
+  type KafkaMessage,
+  type TopicHealth,
+  type TopicHealthIssue,
+} from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 
@@ -34,15 +40,44 @@ const expanded = ref<Set<string>>(new Set());
 const page = ref(1);
 const pageSize = 10;
 const copied = ref("");
+const topicHealth = ref<TopicHealth | null>(null);
+const healthLoading = ref(false);
+const healthError = ref("");
+const healthCollapsed = ref(true);
+const showAllPartitions = ref(false);
+const healthPage = ref(1);
+const healthPageSize = 10;
 const paginatedMessages = computed(() => {
   const start = (page.value - 1) * pageSize;
   return messages.value.slice(start, start + pageSize);
+});
+const visibleHealthPartitions = computed(() => {
+  const items = topicHealth.value?.items || [];
+  return showAllPartitions.value ? items : items.filter((item) => !item.healthy);
+});
+const paginatedHealthPartitions = computed(() => {
+  const start = (healthPage.value - 1) * healthPageSize;
+  return visibleHealthPartitions.value.slice(start, start + healthPageSize);
 });
 
 watch(() => messages.value.length, (total) => {
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   if (page.value > lastPage) page.value = lastPage;
 });
+watch(showAllPartitions, () => {
+  healthPage.value = 1;
+});
+watch(() => visibleHealthPartitions.value.length, () => {
+  const lastPage = Math.max(1, Math.ceil(visibleHealthPartitions.value.length / healthPageSize));
+  if (healthPage.value > lastPage) healthPage.value = lastPage;
+});
+
+const healthIssueLabels: Record<TopicHealthIssue, string> = {
+  partition_error: "Metadata 错误",
+  leader_unavailable: "Leader 不可用",
+  under_replicated: "ISR 副本不足",
+  offline_replicas: "存在离线副本",
+};
 
 function toRFC3339(value: string) {
   return value ? new Date(value).toISOString() : "";
@@ -64,6 +99,29 @@ function preview(value: string) {
 
 function messageId(message: KafkaMessage) {
   return `${message.partition}-${message.offset}`;
+}
+
+function healthMetric(value?: number) {
+  if (value !== undefined) return value.toLocaleString();
+  return healthLoading.value ? "读取中" : "不可用";
+}
+
+function brokerList(values: number[]) {
+  return values.length ? values.join(", ") : "无";
+}
+
+async function loadTopicHealth() {
+  if (healthLoading.value) return;
+  healthLoading.value = true;
+  healthError.value = "";
+  try {
+    topicHealth.value = await fetchTopicHealth(topic.value, connection.form);
+  } catch (reason) {
+    topicHealth.value = null;
+    healthError.value = reason instanceof Error ? reason.message : "Topic 健康状态读取失败";
+  } finally {
+    healthLoading.value = false;
+  }
 }
 
 function toggleMessage(message: KafkaMessage) {
@@ -168,6 +226,7 @@ onMounted(() => {
   // 让用户只在主动选择时间后才看到日期。
   fromTime.value = "";
   toTime.value = "";
+  loadTopicHealth();
   search();
 });
 </script>
@@ -181,6 +240,93 @@ onMounted(() => {
         <h1>{{ topic }}</h1>
         <p>按时间和内容检索消息。默认展示最新 20 条，不会提交消费 Offset。</p>
       </div>
+    </div>
+
+    <div class="summary-grid topic-health-summary">
+      <article><span>分区总数</span><strong>{{ healthMetric(topicHealth?.partitions) }}</strong><small>Metadata 中的 Partition</small></article>
+      <article><span>正常分区</span><strong>{{ healthMetric(topicHealth?.healthyPartitions) }}</strong><small>Leader 与副本同步正常</small></article>
+      <article :class="{ warning: (topicHealth?.problemPartitions || 0) > 0 }"><span>异常分区</span><strong>{{ healthMetric(topicHealth?.problemPartitions) }}</strong><small>至少存在一项异常</small></article>
+      <article :class="{ warning: (topicHealth?.noLeaderPartitions || 0) > 0 }"><span>无 Leader</span><strong>{{ healthMetric(topicHealth?.noLeaderPartitions) }}</strong><small>Leader 当前不可用</small></article>
+    </div>
+
+    <div class="data-card topic-health-card" :class="{ problem: (topicHealth?.problemPartitions || 0) > 0 }">
+      <div class="table-toolbar topic-health-toolbar">
+        <div>
+          <strong>分区健康状态</strong>
+          <small>单 Topic Metadata，只读查询</small>
+        </div>
+        <div class="topic-health-actions">
+          <span v-if="healthLoading">读取中…</span>
+          <span v-else-if="healthError">读取失败</span>
+          <span v-else-if="topicHealth?.problemPartitions" class="health-problem">
+            发现 {{ topicHealth.problemPartitions }} 个异常分区
+          </span>
+          <span v-else class="health-ok">全部分区正常</span>
+          <button type="button" :disabled="healthLoading" @click="loadTopicHealth">刷新</button>
+          <button type="button" :aria-expanded="!healthCollapsed" @click="healthCollapsed = !healthCollapsed">
+            {{ healthCollapsed ? "展开" : "收起" }}
+          </button>
+        </div>
+      </div>
+
+      <template v-if="!healthCollapsed">
+        <div class="health-filter-bar">
+          <div>
+            <button type="button" :class="{ active: !showAllPartitions }" @click="showAllPartitions = false">只看异常</button>
+            <button type="button" :class="{ active: showAllPartitions }" @click="showAllPartitions = true">全部分区</button>
+          </div>
+          <span>{{ visibleHealthPartitions.length }} 个分区</span>
+        </div>
+
+        <div v-if="healthError" class="member-empty">
+          <strong>健康状态读取失败</strong>
+          <p>{{ healthError }}</p>
+        </div>
+
+        <table v-else-if="paginatedHealthPartitions.length">
+          <thead>
+            <tr>
+              <th>Partition</th>
+              <th>Leader</th>
+              <th>Replicas</th>
+              <th>ISR</th>
+              <th>Offline Replicas</th>
+              <th>诊断</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="partition in paginatedHealthPartitions" :key="partition.partition" :class="{ 'health-problem-row': !partition.healthy }">
+              <td><span class="partition-tag">P{{ partition.partition }}</span></td>
+              <td>
+                <strong v-if="partition.leader >= 0">Broker {{ partition.leader }}</strong>
+                <span v-else class="health-problem">不可用</span>
+              </td>
+              <td>{{ brokerList(partition.replicas) }}</td>
+              <td>{{ brokerList(partition.isr) }}</td>
+              <td>{{ brokerList(partition.offlineReplicas) }}</td>
+              <td>
+                <span v-if="partition.healthy" class="health-status healthy">正常</span>
+                <div v-else class="health-issues">
+                  <span v-for="issue in partition.issues" :key="issue">{{ healthIssueLabels[issue] }}</span>
+                  <small v-if="partition.errorMessage">{{ partition.errorMessage }}</small>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-else-if="!healthLoading" class="member-empty">
+          <strong>{{ showAllPartitions ? "没有分区 Metadata" : "没有异常分区" }}</strong>
+          <p>{{ showAllPartitions ? "Kafka 没有返回可展示的分区信息。" : "当前 Topic 的 Leader、ISR 和副本状态正常。" }}</p>
+        </div>
+
+        <AppPagination
+          v-if="visibleHealthPartitions.length > healthPageSize"
+          v-model:page="healthPage"
+          :page-size="healthPageSize"
+          :total="visibleHealthPartitions.length"
+        />
+      </template>
     </div>
 
     <form class="message-search-card" @submit.prevent="search">

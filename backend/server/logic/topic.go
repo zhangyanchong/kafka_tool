@@ -58,6 +58,75 @@ func topicItemFromMetadata(topic kmsg.MetadataResponseTopic) model.TopicItem {
 	}
 }
 
+func FindTopicHealth(ctx context.Context, client *kgo.Client, topic string) (model.TopicHealthResponse, error) {
+	metadata, err := kadm.NewClient(client).Metadata(ctx, topic)
+	if err != nil {
+		return model.TopicHealthResponse{}, fmt.Errorf("读取 Topic Metadata 失败：%s", FriendlyKafkaError(err))
+	}
+	detail, ok := metadata.Topics[topic]
+	if !ok {
+		return model.TopicHealthResponse{}, fmt.Errorf("Kafka 未返回 Topic %s 的 Metadata", topic)
+	}
+	if detail.Err != nil {
+		return model.TopicHealthResponse{}, fmt.Errorf("读取 Topic Metadata 失败：%s", FriendlyKafkaError(detail.Err))
+	}
+
+	response := model.TopicHealthResponse{
+		Topic:    topic,
+		Internal: detail.IsInternal,
+		Items:    make([]model.TopicPartitionHealthItem, 0, len(detail.Partitions)),
+	}
+	for _, partition := range detail.Partitions.Sorted() {
+		item := topicPartitionHealthItem(partition)
+		response.Items = append(response.Items, item)
+		response.Partitions++
+		if item.Healthy {
+			response.HealthyPartitions++
+		} else {
+			response.ProblemPartitions++
+		}
+		if partition.Leader < 0 {
+			response.NoLeaderPartitions++
+		}
+		if len(partition.ISR) < len(partition.Replicas) {
+			response.UnderReplicatedPartitions++
+		}
+		if len(partition.OfflineReplicas) > 0 {
+			response.OfflineReplicaPartitions++
+		}
+	}
+	return response, nil
+}
+
+func topicPartitionHealthItem(partition kadm.PartitionDetail) model.TopicPartitionHealthItem {
+	issues := make([]string, 0, 4)
+	errorMessage := ""
+	if partition.Err != nil {
+		issues = append(issues, "partition_error")
+		errorMessage = FriendlyKafkaError(partition.Err)
+	}
+	if partition.Leader < 0 {
+		issues = append(issues, "leader_unavailable")
+	}
+	if len(partition.ISR) < len(partition.Replicas) {
+		issues = append(issues, "under_replicated")
+	}
+	if len(partition.OfflineReplicas) > 0 {
+		issues = append(issues, "offline_replicas")
+	}
+	return model.TopicPartitionHealthItem{
+		Partition:       partition.Partition,
+		Leader:          partition.Leader,
+		LeaderEpoch:     partition.LeaderEpoch,
+		Replicas:        append([]int32{}, partition.Replicas...),
+		ISR:             append([]int32{}, partition.ISR...),
+		OfflineReplicas: append([]int32{}, partition.OfflineReplicas...),
+		Healthy:         len(issues) == 0,
+		Issues:          issues,
+		ErrorMessage:    errorMessage,
+	}
+}
+
 func FindMessages(ctx context.Context, client *kgo.Client, topic string, req model.MessageSearchRequest, fromTime, toTime time.Time) (model.MessageSearchResponse, error) {
 	admin := kadm.NewClient(client)
 	startOffsets, err := admin.ListStartOffsets(ctx, topic)

@@ -19,6 +19,8 @@ const groupState = ref("");
 const protocolType = ref("");
 const protocol = ref("");
 const keyword = ref("");
+const partitionFilter = ref<"all" | "lagged" | "uncommitted" | "anomaly">("all");
+const partitionSort = ref<"lag_desc" | "partition">("lag_desc");
 const page = ref(1);
 const pageSize = 10;
 const memberPage = ref(1);
@@ -28,13 +30,28 @@ const loading = ref(false);
 const loadError = ref("");
 const hasLoaded = ref(false);
 
+function isOffsetAnomaly(item: ConsumerPartition) {
+  return ["before_start", "after_end", "commit_error"].includes(item.offsetStatus);
+}
+
 const filteredPartitions = computed(() => {
   const search = keyword.value.trim().toLowerCase();
-  if (!search) return partitions.value;
-  return partitions.value.filter((item) =>
-    item.topic.toLowerCase().includes(search) ||
-    String(item.partition) === search,
-  );
+  return partitions.value
+    .filter((item) => {
+      if (search && !item.topic.toLowerCase().includes(search) && String(item.partition) !== search) {
+        return false;
+      }
+      if (partitionFilter.value === "lagged") return item.lag > 0;
+      if (partitionFilter.value === "uncommitted") return item.offsetStatus === "uncommitted";
+      if (partitionFilter.value === "anomaly") return isOffsetAnomaly(item);
+      return true;
+    })
+    .sort((left, right) => {
+      if (partitionSort.value === "lag_desc") {
+        return right.lag - left.lag || left.topic.localeCompare(right.topic) || left.partition - right.partition;
+      }
+      return left.topic.localeCompare(right.topic) || left.partition - right.partition;
+    });
 });
 const paginatedPartitions = computed(() => {
   const start = (page.value - 1) * pageSize;
@@ -55,7 +72,7 @@ const groupMetaValue = (value: string) => {
   return !hasLoaded.value && loading.value ? "读取中" : "信息不可用";
 };
 
-watch(keyword, () => { page.value = 1; });
+watch([keyword, partitionFilter, partitionSort], () => { page.value = 1; });
 watch(() => filteredPartitions.value.length, (total) => {
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   if (page.value > lastPage) page.value = lastPage;
@@ -70,6 +87,16 @@ function memberAssignments(member: ConsumerMember) {
   return member.assignments
     .map((assignment) => `${assignment.topic} [${assignment.partitions.join(", ")}]`)
     .join("；");
+}
+
+function offsetStatusLabel(item: ConsumerPartition) {
+  switch (item.offsetStatus) {
+    case "before_start": return "早于 Start";
+    case "after_end": return "超过 End";
+    case "commit_error": return "提交查询异常";
+    case "uncommitted": return "未提交";
+    default: return "范围内";
+  }
 }
 
 async function loadPartitions() {
@@ -192,9 +219,21 @@ onMounted(loadPartitions);
 
     <div class="data-card partition-card">
       <div class="table-toolbar">
-        <div class="search-box">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
-          <input v-model="keyword" placeholder="搜索 Topic 或分区编号" />
+        <div class="partition-toolbar-controls">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
+            <input v-model="keyword" placeholder="搜索 Topic 或分区编号" />
+          </div>
+          <select v-model="partitionFilter" aria-label="筛选分区">
+            <option value="all">全部分区</option>
+            <option value="lagged">只看有积压</option>
+            <option value="uncommitted">只看未提交</option>
+            <option value="anomaly">只看 Offset 异常</option>
+          </select>
+          <select v-model="partitionSort" aria-label="分区排序">
+            <option value="lag_desc">Lag 从高到低</option>
+            <option value="partition">按分区编号</option>
+          </select>
         </div>
         <span>{{ filteredPartitions.length }} 个分区</span>
       </div>
@@ -208,19 +247,38 @@ onMounted(loadPartitions);
             <th>当前 Offset</th>
             <th>结束 Offset</th>
             <th>剩余 Lag</th>
+            <th>Offset 状态</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in paginatedPartitions" :key="`${item.topic}-${item.partition}`">
+          <tr
+            v-for="item in paginatedPartitions"
+            :key="`${item.topic}-${item.partition}`"
+            :class="{ 'offset-anomaly-row': isOffsetAnomaly(item) }"
+          >
             <td><strong>{{ item.topic }}</strong></td>
             <td><span class="partition-tag">P{{ item.partition }}</span></td>
             <td>{{ item.logStartOffset.toLocaleString() }}</td>
             <td>
-              <span v-if="item.hasCommitted">{{ item.committedOffset.toLocaleString() }}</span>
+              <span v-if="item.offsetStatus === 'commit_error'" class="offset-status anomaly">查询异常</span>
+              <span v-else-if="item.hasCommitted">{{ item.committedOffset.toLocaleString() }}</span>
               <span v-else class="muted">未提交</span>
             </td>
             <td>{{ item.logEndOffset.toLocaleString() }}</td>
             <td><strong :class="{ 'lag-warning': item.lag > 0 }">{{ item.lag.toLocaleString() }}</strong></td>
+            <td>
+              <span
+                class="offset-status"
+                :class="{
+                  normal: item.offsetStatus === 'normal',
+                  uncommitted: item.offsetStatus === 'uncommitted',
+                  anomaly: isOffsetAnomaly(item),
+                }"
+                :title="item.errorMessage || undefined"
+              >
+                {{ offsetStatusLabel(item) }}
+              </span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -229,8 +287,8 @@ onMounted(loadPartitions);
         <div class="empty-icon consumer">
           <svg viewBox="0 0 24 24"><path d="M5 7h14v10H5zM8 4h8M8 20h8" /><path d="M9 11h6M9 14h4" /></svg>
         </div>
-        <strong>{{ loading ? "正在读取分区进度" : loadError ? "读取失败" : "没有分区消费记录" }}</strong>
-        <p>{{ loadError || (loading ? "正在读取开始、当前和结束 Offset…" : "该消费组暂时没有已提交的 Offset。") }}</p>
+        <strong>{{ loading ? "正在读取分区进度" : loadError ? "读取失败" : "没有符合条件的分区" }}</strong>
+        <p>{{ loadError || (loading ? "正在读取开始、当前和结束 Offset…" : "可以调整搜索、筛选或排序条件。") }}</p>
       </div>
 
       <AppPagination
