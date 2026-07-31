@@ -255,6 +255,10 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .period-picker button:disabled { cursor: not-allowed; opacity: .55; }
 .monitor-button { height: 40px; padding: 0 17px; color: #fff; background: #f26039; border: 0; border-radius: 7px; cursor: pointer; font-size: 10px; font-weight: 700; }
 .monitor-button:disabled { cursor: wait; opacity: .55; }
+.metrics-actions { height: 40px; display: flex; align-items: center; gap: 8px; }
+.clear-chart-button { height: 40px; padding: 0 12px; color: #89929e; background: #191d24; border: 1px solid #303640; border-radius: 7px; cursor: pointer; white-space: nowrap; font-size: 9px; }
+.clear-chart-button:hover:not(:disabled) { color: #fff; border-color: #555e6b; }
+.clear-chart-button:disabled { cursor: not-allowed; opacity: .38; }
 .monitor-controls { height: 40px; display: flex; align-items: center; gap: 8px; }
 .monitor-controls > span { height: 40px; padding: 0 12px; display: flex; align-items: center; gap: 7px; color: #59d998; background: rgba(63,201,137,.07); border: 1px solid rgba(63,201,137,.18); border-radius: 7px; white-space: nowrap; font-size: 9px; font-weight: 700; }
 .monitor-controls > span i { width: 6px; height: 6px; background: currentColor; border-radius: 50%; box-shadow: 0 0 0 4px rgba(63,201,137,.08); animation: monitor-pulse 1.8s ease-in-out infinite; }
@@ -331,6 +335,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="light"] .check,
 :root[data-theme="light"] .refresh-button,
 :root[data-theme="light"] .collapse-button,
+:root[data-theme="light"] .clear-chart-button,
 :root[data-theme="light"] .monitor-controls button,
 :root[data-theme="light"] .message-content button,
 :root[data-theme="light"] .pagination-controls button {
@@ -420,6 +425,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 :root[data-theme="forest"] .check,
 :root[data-theme="forest"] .refresh-button,
 :root[data-theme="forest"] .collapse-button,
+:root[data-theme="forest"] .clear-chart-button,
 :root[data-theme="forest"] .monitor-controls button,
 :root[data-theme="forest"] .message-content button,
 :root[data-theme="forest"] .pagination-controls button {

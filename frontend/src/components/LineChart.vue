@@ -21,6 +21,7 @@ const height = 250;
 const padding = { top: 22, right: 62, bottom: 34, left: 62 };
 const plotWidth = width - padding.left - padding.right;
 const plotHeight = height - padding.top - padding.bottom;
+const hasData = computed(() => props.series.some((item) => item.values.length));
 
 const leftValues = computed(() =>
   props.series.filter((item) => item.axis !== "right").flatMap((item) => item.values),
@@ -75,10 +76,10 @@ function compact(value: number) {
 
 <template>
   <div class="line-chart">
-    <div v-if="series.some((item) => item.values.length)" class="chart-legend">
+    <div v-if="hasData" class="chart-legend">
       <span v-for="item in series" :key="item.name"><i :style="{ background: item.color }"></i>{{ item.name }}</span>
     </div>
-    <svg :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="指标趋势图">
+    <svg v-if="hasData" :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="指标趋势图">
       <g v-for="(value, index) in leftGridValues" :key="index">
         <line
           :x1="padding.left"
@@ -125,6 +126,7 @@ function compact(value: number) {
         />
       </g>
     </svg>
-    <div v-if="labels.length < 2" class="chart-waiting">等待下一个采样点生成趋势线…</div>
+    <div v-if="!hasData" class="chart-waiting">等待完成首个采样周期…</div>
+    <div v-else-if="labels.length < 2" class="chart-waiting">等待下一个采样点生成趋势线…</div>
   </div>
 </template>

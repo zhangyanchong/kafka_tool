@@ -33,6 +33,20 @@ let timer: number | undefined;
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
 const latestMeasurement = computed(() => measuredSamples.value[measuredSamples.value.length - 1]);
+const sortedConsumers = computed(() =>
+  [...consumers.value].sort((left, right) => {
+    const rank = (state: string) => {
+      const normalized = state.trim().toLowerCase();
+      if (normalized === "stable") return 0;
+      if (["preparingrebalance", "completingrebalance", "assigning", "reconciling"].includes(normalized)) return 1;
+      if (!normalized) return 2;
+      if (normalized === "empty") return 3;
+      if (normalized === "dead") return 4;
+      return 2;
+    };
+    return rank(left.state) - rank(right.state) || left.groupId.localeCompare(right.groupId);
+  }),
+);
 const previousSnapshot = computed(() =>
   samples.value.length >= 2 ? samples.value[samples.value.length - 2] : undefined,
 );
@@ -61,8 +75,12 @@ const samplingLabel = computed(() => {
   return `${samplingSeconds.value / 60} 分钟`;
 });
 
-function formatNumber(value?: number) {
-  return (value ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+function formatNumber(value: number) {
+  return value.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
+function metricDisplay(value?: number) {
+  return value === undefined ? "待采样" : formatNumber(value);
 }
 
 async function loadOptions() {
@@ -141,6 +159,10 @@ function stopMonitoring() {
   monitoring.value = false;
 }
 
+function clearSamples() {
+  samples.value = [];
+}
+
 onMounted(loadOptions);
 onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer);
@@ -152,7 +174,7 @@ onBeforeUnmount(() => {
     <div class="page-heading">
       <div>
         <span class="section-kicker">READ-ONLY METRICS</span>
-        <h1>View</h1>
+        <h1>监控</h1>
         <p>通过 Offset 快照观察 Topic 生产、消费组消费和积压趋势，不消费任何消息。</p>
       </div>
       <div class="read-only-badge"><i></i>只读监控</div>
@@ -170,8 +192,8 @@ onBeforeUnmount(() => {
         <span>选择 Consumer Group</span>
         <select v-model="selectedGroup" :disabled="loadingOptions || monitoring">
           <option value="" disabled>请选择消费组</option>
-          <option v-for="consumer in consumers" :key="consumer.groupId" :value="consumer.groupId">
-            {{ consumer.groupId }}
+          <option v-for="consumer in sortedConsumers" :key="consumer.groupId" :value="consumer.groupId">
+            {{ consumer.groupId }}{{ consumer.state ? `（${consumer.state}）` : "" }}
           </option>
         </select>
       </label>
@@ -190,12 +212,17 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <button v-if="!monitoring" class="monitor-button" type="submit" :disabled="refreshing || loadingOptions">
-        {{ refreshing ? "正在启动…" : "开始监控" }}
-      </button>
-      <div v-else class="monitor-controls">
-        <span><i></i>{{ refreshing ? "正在采集…" : "监控中" }}</span>
-        <button type="button" @click="stopMonitoring">停止监控</button>
+      <div class="metrics-actions">
+        <button v-if="!monitoring" class="monitor-button" type="submit" :disabled="refreshing || loadingOptions">
+          {{ refreshing ? "正在启动…" : "开始监控" }}
+        </button>
+        <div v-else class="monitor-controls">
+          <span><i></i>{{ refreshing ? "正在采集…" : "监控中" }}</span>
+          <button type="button" @click="stopMonitoring">停止监控</button>
+        </div>
+        <button class="clear-chart-button" type="button" :disabled="samples.length === 0" @click="clearSamples">
+          清空图表
+        </button>
       </div>
     </form>
 
@@ -204,7 +231,7 @@ onBeforeUnmount(() => {
     <div class="metric-kpis">
       <article>
         <span>TOPIC 本周期实际生成（非平均）</span>
-        <strong>{{ formatNumber(latestMeasurement?.producedDelta) }}</strong>
+        <strong>{{ metricDisplay(latestMeasurement?.producedDelta) }}</strong>
         <small v-if="latestMeasurement && previousSnapshot">
           End {{ formatNumber(previousSnapshot.endOffset) }} → {{ formatNumber(latestMeasurement.endOffset) }}，间隔 {{ Math.round(latestMeasurement.elapsedSeconds) }} 秒
         </small>
@@ -212,7 +239,7 @@ onBeforeUnmount(() => {
       </article>
       <article>
         <span>消费组本周期实际提交（非平均）</span>
-        <strong>{{ formatNumber(latestMeasurement?.consumedDelta) }}</strong>
+        <strong>{{ metricDisplay(latestMeasurement?.consumedDelta) }}</strong>
         <small v-if="latestMeasurement && previousSnapshot">
           Committed {{ formatNumber(previousSnapshot.committedOffset) }} → {{ formatNumber(latestMeasurement.committedOffset) }}，间隔 {{ Math.round(latestMeasurement.elapsedSeconds) }} 秒
         </small>
@@ -220,13 +247,14 @@ onBeforeUnmount(() => {
       </article>
       <article>
         <span>END OFFSET</span>
-        <strong>{{ formatNumber(latest?.endOffset) }}</strong>
-        <small>{{ latest?.partitions || 0 }} 个分区合计</small>
+        <strong>{{ metricDisplay(latest?.endOffset) }}</strong>
+        <small v-if="latest">{{ latest.partitions }} 个分区合计</small>
+        <small v-else>等待首次快照</small>
       </article>
-      <article :class="{ warning: (latest?.lag || 0) > 0 }">
+      <article :class="{ warning: latest !== undefined && latest.lag > 0 }">
         <span>CONSUMER LAG</span>
-        <strong>{{ formatNumber(latest?.lag) }}</strong>
-        <small>剩余未消费消息</small>
+        <strong>{{ metricDisplay(latest?.lag) }}</strong>
+        <small>{{ latest ? "剩余未消费消息" : "等待首次快照" }}</small>
       </article>
     </div>
 

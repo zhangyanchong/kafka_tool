@@ -42,7 +42,7 @@ const themeOptions: Array<{ value: AppTheme; label: string; color: string }> = [
             <path d="M4 18V9M10 18V5M16 18v-7M22 18V3" />
             <path d="M3 18h20" />
           </svg>
-          <span>View</span>
+          <span>监控</span>
         </RouterLink>
       </nav>
 
