@@ -30,6 +30,8 @@ const refreshing = ref(false);
 const monitoring = ref(false);
 const error = ref("");
 const consumerOptionsError = ref("");
+const topicPickerOpen = ref(false);
+const consumerPickerOpen = ref(false);
 let timer: number | undefined;
 
 const latest = computed(() => samples.value[samples.value.length - 1]);
@@ -52,6 +54,23 @@ const sortedConsumers = computed(() =>
     return rank(left.state) - rank(right.state) || left.groupId.localeCompare(right.groupId);
   }),
 );
+const filteredTopics = computed(() => {
+  const keyword = selectedTopic.value.trim().toLocaleLowerCase();
+  const items = keyword
+    ? topics.value.filter((item) => item.name.toLocaleLowerCase().includes(keyword))
+    : topics.value;
+  return items.slice(0, 50);
+});
+const filteredConsumers = computed(() => {
+  const keyword = selectedGroup.value.trim().toLocaleLowerCase();
+  const items = keyword
+    ? sortedConsumers.value.filter((item) =>
+        item.groupId.toLocaleLowerCase().includes(keyword) ||
+        item.state.toLocaleLowerCase().includes(keyword),
+      )
+    : sortedConsumers.value;
+  return items.slice(0, 50);
+});
 const previousSnapshot = computed(() =>
   samples.value.length >= 2 ? samples.value[samples.value.length - 2] : undefined,
 );
@@ -188,6 +207,28 @@ function clearSamples() {
   samples.value = [];
 }
 
+function selectTopic(name: string) {
+  selectedTopic.value = name;
+  topicPickerOpen.value = false;
+}
+
+function closeTopicPicker() {
+  window.setTimeout(() => {
+    topicPickerOpen.value = false;
+  }, 100);
+}
+
+function selectConsumer(groupId: string) {
+  selectedGroup.value = groupId;
+  consumerPickerOpen.value = false;
+}
+
+function closeConsumerPicker() {
+  window.setTimeout(() => {
+    consumerPickerOpen.value = false;
+  }, 100);
+}
+
 onMounted(loadOptions);
 onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer);
@@ -208,19 +249,56 @@ onBeforeUnmount(() => {
     <form class="metrics-filter" @submit.prevent="startMonitoring">
       <label class="topic-picker">
         <span>搜索并选择 Topic</span>
-        <input v-model.trim="selectedTopic" list="metric-topics" placeholder="输入 Topic 名称搜索" :disabled="loadingOptions || monitoring" />
-        <datalist id="metric-topics">
-          <option v-for="topic in topics" :key="topic.name" :value="topic.name"></option>
-        </datalist>
+        <input
+          v-model="selectedTopic"
+          placeholder="输入 Topic 名称搜索"
+          autocomplete="off"
+          :disabled="loadingOptions || monitoring"
+          @focus="topicPickerOpen = true"
+          @input="topicPickerOpen = true"
+          @blur="closeTopicPicker"
+        />
+        <div v-if="topicPickerOpen && !loadingOptions && !monitoring" class="topic-options">
+          <button
+            v-for="topic in filteredTopics"
+            :key="topic.name"
+            type="button"
+            :class="{ active: topic.name === selectedTopic }"
+            @mousedown.prevent="selectTopic(topic.name)"
+          >
+            {{ topic.name }}
+          </button>
+          <small v-if="filteredTopics.length === 0">没有匹配的 Topic</small>
+          <small v-else-if="filteredTopics.length === 50">最多显示前 50 个匹配结果，请继续输入缩小范围</small>
+        </div>
       </label>
-      <label>
+      <label class="consumer-picker">
         <span>Consumer Group（可选）</span>
-        <select v-model="selectedGroup" :disabled="loadingOptions || monitoring">
-          <option value="">{{ consumerOptionsError || "不选择，仅监控 Topic" }}</option>
-          <option v-for="consumer in sortedConsumers" :key="consumer.groupId" :value="consumer.groupId">
-            {{ consumer.groupId }}{{ consumer.state ? `（${consumer.state}）` : "" }}
-          </option>
-        </select>
+        <input
+          v-model="selectedGroup"
+          :placeholder="consumerOptionsError || '输入消费组名称搜索；留空则仅监控 Topic'"
+          autocomplete="off"
+          :disabled="loadingOptions || monitoring || Boolean(consumerOptionsError)"
+          @focus="consumerPickerOpen = true"
+          @input="consumerPickerOpen = true"
+          @blur="closeConsumerPicker"
+        />
+        <div v-if="consumerPickerOpen && !loadingOptions && !monitoring && !consumerOptionsError" class="topic-options consumer-options">
+          <button type="button" :class="{ active: !selectedGroup }" @mousedown.prevent="selectConsumer('')">
+            不选择，仅监控 Topic
+          </button>
+          <button
+            v-for="consumer in filteredConsumers"
+            :key="consumer.groupId"
+            type="button"
+            :class="{ active: consumer.groupId === selectedGroup }"
+            @mousedown.prevent="selectConsumer(consumer.groupId)"
+          >
+            <b>{{ consumer.groupId }}</b><em v-if="consumer.state">{{ consumer.state }}</em>
+          </button>
+          <small v-if="filteredConsumers.length === 0">没有匹配的 Consumer Group</small>
+          <small v-else-if="filteredConsumers.length === 50">最多显示前 50 个匹配结果，请继续输入缩小范围</small>
+        </div>
       </label>
       <div class="period-picker">
         <span>真实采样周期</span>

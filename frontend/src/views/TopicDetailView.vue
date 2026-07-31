@@ -28,9 +28,9 @@ const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref<KafkaMessage[]>([]);
 const fromDate = ref("");
-const fromClock = ref("00:00");
+const fromClock = ref("");
 const toDate = ref("");
-const toClock = ref("23:59");
+const toClock = ref("");
 const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
@@ -80,6 +80,29 @@ const healthIssueLabels: Record<TopicHealthIssue, string> = {
   under_replicated: "ISR 副本不足",
   offline_replicas: "存在离线副本",
 };
+
+function todayValue() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function activateStartTime() {
+  if (!fromDate.value) fromDate.value = todayValue();
+  if (!fromClock.value) fromClock.value = "00:00";
+}
+
+function activateEndTime() {
+  if (!toDate.value) toDate.value = todayValue();
+  if (!toClock.value) toClock.value = "23:59";
+}
+
+function closeNativePicker(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  requestAnimationFrame(() => input.blur());
+}
 
 function toRFC3339(date: string, clock: string, fallbackClock: string) {
   if (!date) return "";
@@ -216,9 +239,9 @@ async function search() {
 
 function resetSearch() {
   fromDate.value = "";
-  fromClock.value = "00:00";
+  fromClock.value = "";
   toDate.value = "";
-  toClock.value = "23:59";
+  toClock.value = "";
   keyword.value = "";
   limit.value = 20;
   scanLimit.value = 10000;
@@ -258,12 +281,11 @@ async function exportMessages() {
 }
 
 onMounted(() => {
-  // 时间范围是可选条件。显式清空可避免浏览器或桌面 WebView 恢复上次的值，
-  // 让用户只在主动选择时间后才看到日期。
+  // 时间范围默认不启用，只有用户聚焦对应控件后才补入今天的起止时间。
   fromDate.value = "";
-  fromClock.value = "00:00";
+  fromClock.value = "";
   toDate.value = "";
-  toClock.value = "23:59";
+  toClock.value = "";
   loadTopicHealth();
   search();
 });
@@ -376,48 +398,54 @@ onMounted(() => {
         </div>
       </label>
       <label class="datetime-label">
-        <span>开始时间（可选）</span>
+        <span>开始时间</span>
         <div class="datetime-fields">
           <input
             v-model="fromDate"
-            type="text"
+            class="date-entry"
+            type="date"
             name="message-search-from-date"
             autocomplete="off"
-            inputmode="numeric"
-            placeholder="2026-07-02"
-            aria-label="开始日期（可选）"
-            @blur="fromDate = normalizeDateInput(fromDate)"
+            lang="en-CA"
+            aria-label="开始日期"
+            @focus="activateStartTime"
+            @change="closeNativePicker"
           />
-          <i>-</i>
           <input
             v-model="fromClock"
+            class="clock-entry"
             type="time"
             name="message-search-from-clock"
             step="60"
             aria-label="开始时分"
+            @focus="activateStartTime"
+            @change="closeNativePicker"
           />
         </div>
       </label>
       <label class="datetime-label end-datetime-label">
-        <span>结束时间（可选）</span>
+        <span>结束时间</span>
         <div class="datetime-fields">
           <input
             v-model="toDate"
-            type="text"
+            class="date-entry"
+            type="date"
             name="message-search-to-date"
             autocomplete="off"
-            inputmode="numeric"
-            placeholder="2026-07-02"
-            aria-label="结束日期（可选）"
-            @blur="toDate = normalizeDateInput(toDate)"
+            lang="en-CA"
+            aria-label="结束日期"
+            @focus="activateEndTime"
+            @change="closeNativePicker"
           />
-          <i>-</i>
           <input
             v-model="toClock"
+            class="clock-entry"
             type="time"
             name="message-search-to-clock"
             step="60"
             aria-label="结束时分"
+            @focus="activateEndTime"
+            @change="closeNativePicker"
           />
         </div>
       </label>

@@ -15,6 +15,8 @@ const refreshing = ref(false);
 const monitoring = ref(false);
 const error = ref("");
 const consumerOptionsError = ref("");
+const topicPickerOpen = ref(false);
+const consumerPickerOpen = ref(false);
 let timer;
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
@@ -37,6 +39,21 @@ const sortedConsumers = computed(() => [...consumers.value].sort((left, right) =
     };
     return rank(left.state) - rank(right.state) || left.groupId.localeCompare(right.groupId);
 }));
+const filteredTopics = computed(() => {
+    const keyword = selectedTopic.value.trim().toLocaleLowerCase();
+    const items = keyword
+        ? topics.value.filter((item) => item.name.toLocaleLowerCase().includes(keyword))
+        : topics.value;
+    return items.slice(0, 50);
+});
+const filteredConsumers = computed(() => {
+    const keyword = selectedGroup.value.trim().toLocaleLowerCase();
+    const items = keyword
+        ? sortedConsumers.value.filter((item) => item.groupId.toLocaleLowerCase().includes(keyword) ||
+            item.state.toLocaleLowerCase().includes(keyword))
+        : sortedConsumers.value;
+    return items.slice(0, 50);
+});
 const previousSnapshot = computed(() => samples.value.length >= 2 ? samples.value[samples.value.length - 2] : undefined);
 const labels = computed(() => measuredSamples.value.map((item) => new Date(item.timestamp).toLocaleTimeString("zh-CN", {
     hour12: false,
@@ -162,6 +179,24 @@ function stopMonitoring() {
 function clearSamples() {
     samples.value = [];
 }
+function selectTopic(name) {
+    selectedTopic.value = name;
+    topicPickerOpen.value = false;
+}
+function closeTopicPicker() {
+    window.setTimeout(() => {
+        topicPickerOpen.value = false;
+    }, 100);
+}
+function selectConsumer(groupId) {
+    selectedGroup.value = groupId;
+    consumerPickerOpen.value = false;
+}
+function closeConsumerPicker() {
+    window.setTimeout(() => {
+        consumerPickerOpen.value = false;
+    }, 100);
+}
 onMounted(loadOptions);
 onBeforeUnmount(() => {
     if (timer)
@@ -206,41 +241,121 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
 /** @type {__VLS_StyleScopedClasses['topic-picker']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    list: "metric-topics",
+    ...{ onFocus: (...[$event]) => {
+            return (__VLS_ctx.topicPickerOpen = true);
+            // @ts-ignore
+            [startMonitoring, topicPickerOpen,];
+        } },
+    ...{ onInput: (...[$event]) => {
+            return (__VLS_ctx.topicPickerOpen = true);
+            // @ts-ignore
+            [topicPickerOpen,];
+        } },
+    ...{ onBlur: (__VLS_ctx.closeTopicPicker) },
     placeholder: "输入 Topic 名称搜索",
+    autocomplete: "off",
     disabled: (__VLS_ctx.loadingOptions || __VLS_ctx.monitoring),
 });
 (__VLS_ctx.selectedTopic);
-__VLS_asFunctionalElement1(__VLS_intrinsics.datalist, __VLS_intrinsics.datalist)({
-    id: "metric-topics",
-});
-for (const [topic] of __VLS_vFor((__VLS_ctx.topics))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-        key: (topic.name),
-        value: (topic.name),
+if (__VLS_ctx.topicPickerOpen && !__VLS_ctx.loadingOptions && !__VLS_ctx.monitoring) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "topic-options" },
     });
-    // @ts-ignore
-    [startMonitoring, loadingOptions, monitoring, selectedTopic, topics,];
+    /** @type {__VLS_StyleScopedClasses['topic-options']} */ ;
+    for (const [topic] of __VLS_vFor((__VLS_ctx.filteredTopics))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onMousedown: (...[$event]) => {
+                    if (!(__VLS_ctx.topicPickerOpen && !__VLS_ctx.loadingOptions && !__VLS_ctx.monitoring))
+                        throw 0;
+                    return (__VLS_ctx.selectTopic(topic.name));
+                    // @ts-ignore
+                    [topicPickerOpen, closeTopicPicker, loadingOptions, loadingOptions, monitoring, monitoring, selectedTopic, filteredTopics, selectTopic,];
+                } },
+            key: (topic.name),
+            type: "button",
+            ...{ class: ({ active: topic.name === __VLS_ctx.selectedTopic }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        (topic.name);
+        // @ts-ignore
+        [selectedTopic,];
+    }
+    if (__VLS_ctx.filteredTopics.length === 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.filteredTopics.length === 50) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
 }
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+    ...{ class: "consumer-picker" },
+});
+/** @type {__VLS_StyleScopedClasses['consumer-picker']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
-    value: (__VLS_ctx.selectedGroup),
-    disabled: (__VLS_ctx.loadingOptions || __VLS_ctx.monitoring),
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    ...{ onFocus: (...[$event]) => {
+            return (__VLS_ctx.consumerPickerOpen = true);
+            // @ts-ignore
+            [filteredTopics, filteredTopics, consumerPickerOpen,];
+        } },
+    ...{ onInput: (...[$event]) => {
+            return (__VLS_ctx.consumerPickerOpen = true);
+            // @ts-ignore
+            [consumerPickerOpen,];
+        } },
+    ...{ onBlur: (__VLS_ctx.closeConsumerPicker) },
+    placeholder: (__VLS_ctx.consumerOptionsError || '输入消费组名称搜索；留空则仅监控 Topic'),
+    autocomplete: "off",
+    disabled: (__VLS_ctx.loadingOptions || __VLS_ctx.monitoring || Boolean(__VLS_ctx.consumerOptionsError)),
 });
-__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-    value: "",
-});
-(__VLS_ctx.consumerOptionsError || "不选择，仅监控 Topic");
-for (const [consumer] of __VLS_vFor((__VLS_ctx.sortedConsumers))) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-        key: (consumer.groupId),
-        value: (consumer.groupId),
+(__VLS_ctx.selectedGroup);
+if (__VLS_ctx.consumerPickerOpen && !__VLS_ctx.loadingOptions && !__VLS_ctx.monitoring && !__VLS_ctx.consumerOptionsError) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "topic-options consumer-options" },
     });
-    (consumer.groupId);
-    (consumer.state ? `（${consumer.state}）` : "");
-    // @ts-ignore
-    [loadingOptions, monitoring, selectedGroup, consumerOptionsError, sortedConsumers,];
+    /** @type {__VLS_StyleScopedClasses['topic-options']} */ ;
+    /** @type {__VLS_StyleScopedClasses['consumer-options']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onMousedown: (...[$event]) => {
+                if (!(__VLS_ctx.consumerPickerOpen && !__VLS_ctx.loadingOptions && !__VLS_ctx.monitoring && !__VLS_ctx.consumerOptionsError))
+                    throw 0;
+                return (__VLS_ctx.selectConsumer(''));
+                // @ts-ignore
+                [loadingOptions, loadingOptions, monitoring, monitoring, consumerPickerOpen, closeConsumerPicker, consumerOptionsError, consumerOptionsError, consumerOptionsError, selectedGroup, selectConsumer,];
+            } },
+        type: "button",
+        ...{ class: ({ active: !__VLS_ctx.selectedGroup }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['active']} */ ;
+    for (const [consumer] of __VLS_vFor((__VLS_ctx.filteredConsumers))) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onMousedown: (...[$event]) => {
+                    if (!(__VLS_ctx.consumerPickerOpen && !__VLS_ctx.loadingOptions && !__VLS_ctx.monitoring && !__VLS_ctx.consumerOptionsError))
+                        throw 0;
+                    return (__VLS_ctx.selectConsumer(consumer.groupId));
+                    // @ts-ignore
+                    [selectedGroup, selectConsumer, filteredConsumers,];
+                } },
+            key: (consumer.groupId),
+            type: "button",
+            ...{ class: ({ active: consumer.groupId === __VLS_ctx.selectedGroup }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
+        (consumer.groupId);
+        if (consumer.state) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.em, __VLS_intrinsics.em)({});
+            (consumer.state);
+        }
+        // @ts-ignore
+        [selectedGroup,];
+    }
+    if (__VLS_ctx.filteredConsumers.length === 0) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
+    else if (__VLS_ctx.filteredConsumers.length === 50) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "period-picker" },
@@ -253,7 +368,7 @@ for (const [period] of __VLS_vFor(([{ seconds: 30, label: '30 秒' }, { seconds:
         ...{ onClick: (...[$event]) => {
                 return (__VLS_ctx.samplingSeconds = period.seconds);
                 // @ts-ignore
-                [samplingSeconds,];
+                [filteredConsumers, filteredConsumers, samplingSeconds,];
             } },
         key: (period.seconds),
         type: "button",

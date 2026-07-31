@@ -8,9 +8,9 @@ const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref([]);
 const fromDate = ref("");
-const fromClock = ref("00:00");
+const fromClock = ref("");
 const toDate = ref("");
-const toClock = ref("23:59");
+const toClock = ref("");
 const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
@@ -60,8 +60,51 @@ const healthIssueLabels = {
     under_replicated: "ISR 副本不足",
     offline_replicas: "存在离线副本",
 };
+function todayValue() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+function activateStartTime() {
+    if (!fromDate.value)
+        fromDate.value = todayValue();
+    if (!fromClock.value)
+        fromClock.value = "00:00";
+}
+function activateEndTime() {
+    if (!toDate.value)
+        toDate.value = todayValue();
+    if (!toClock.value)
+        toClock.value = "23:59";
+}
+function closeNativePicker(event) {
+    const input = event.currentTarget;
+    requestAnimationFrame(() => input.blur());
+}
 function toRFC3339(date, clock, fallbackClock) {
-    return date ? new Date(`${date}T${clock || fallbackClock}:00`).toISOString() : "";
+    if (!date)
+        return "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error(`日期格式必须是 YYYY-MM-DD，例如 2026-07-02：${date}`);
+    }
+    const value = new Date(`${date}T${clock || fallbackClock}:00`);
+    const [year, month, day] = date.split("-").map(Number);
+    if (Number.isNaN(value.getTime()) ||
+        value.getFullYear() !== year ||
+        value.getMonth() + 1 !== month ||
+        value.getDate() !== day) {
+        throw new Error(`日期不存在或格式不正确：${date}`);
+    }
+    return value.toISOString();
+}
+function normalizeDateInput(value) {
+    const normalized = value.trim().replace(/[/.]/g, "-");
+    const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!match)
+        return normalized;
+    return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 function formatTime(value) {
     const date = new Date(value);
@@ -135,13 +178,25 @@ async function search() {
         return;
     }
     scanLimit.value = requestedScanLimit;
+    fromDate.value = normalizeDateInput(fromDate.value);
+    toDate.value = normalizeDateInput(toDate.value);
+    let normalizedFromTime = "";
+    let normalizedToTime = "";
+    try {
+        normalizedFromTime = toRFC3339(fromDate.value, fromClock.value, "00:00");
+        normalizedToTime = toRFC3339(toDate.value, toClock.value, "23:59");
+    }
+    catch (reason) {
+        loadError.value = reason instanceof Error ? reason.message : "日期或时间格式不正确";
+        return;
+    }
     loading.value = true;
     loadError.value = "";
     expanded.value = new Set();
     try {
         const response = await searchTopicMessages(topic.value, connection.form, {
-            fromTime: toRFC3339(fromDate.value, fromClock.value, "00:00"),
-            toTime: toRFC3339(toDate.value, toClock.value, "23:59"),
+            fromTime: normalizedFromTime,
+            toTime: normalizedToTime,
             keyword: keyword.value.trim(),
             limit: limit.value,
             scanLimit: scanLimit.value,
@@ -161,9 +216,9 @@ async function search() {
 }
 function resetSearch() {
     fromDate.value = "";
-    fromClock.value = "00:00";
+    fromClock.value = "";
     toDate.value = "";
-    toClock.value = "23:59";
+    toClock.value = "";
     keyword.value = "";
     limit.value = 20;
     scanLimit.value = 10000;
@@ -202,12 +257,11 @@ async function exportMessages() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 onMounted(() => {
-    // 时间范围是可选条件。显式清空可避免浏览器或桌面 WebView 恢复上次的值，
-    // 让用户只在主动选择时间后才看到日期。
+    // 时间范围默认不启用，只有用户聚焦对应控件后才补入今天的起止时间。
     fromDate.value = "";
-    fromClock.value = "00:00";
+    fromClock.value = "";
     toDate.value = "";
-    toClock.value = "23:59";
+    toClock.value = "";
     loadTopicHealth();
     search();
 });
@@ -500,46 +554,71 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
     placeholder: "输入关键字，匹配消息 Key 或内容",
 });
 (__VLS_ctx.keyword);
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+    ...{ class: "datetime-label" },
+});
+/** @type {__VLS_StyleScopedClasses['datetime-label']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "datetime-fields" },
 });
 /** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    ...{ onFocus: (__VLS_ctx.activateStartTime) },
+    ...{ onChange: (__VLS_ctx.closeNativePicker) },
+    ...{ class: "date-entry" },
     type: "date",
     name: "message-search-from-date",
     autocomplete: "off",
-    'aria-label': "开始日期（可选）",
+    lang: "en-CA",
+    'aria-label': "开始日期",
 });
 (__VLS_ctx.fromDate);
+/** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    ...{ onFocus: (__VLS_ctx.activateStartTime) },
+    ...{ onChange: (__VLS_ctx.closeNativePicker) },
+    ...{ class: "clock-entry" },
     type: "time",
     name: "message-search-from-clock",
     step: "60",
     'aria-label': "开始时分",
 });
 (__VLS_ctx.fromClock);
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+/** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+    ...{ class: "datetime-label end-datetime-label" },
+});
+/** @type {__VLS_StyleScopedClasses['datetime-label']} */ ;
+/** @type {__VLS_StyleScopedClasses['end-datetime-label']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "datetime-fields" },
 });
 /** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    ...{ onFocus: (__VLS_ctx.activateEndTime) },
+    ...{ onChange: (__VLS_ctx.closeNativePicker) },
+    ...{ class: "date-entry" },
     type: "date",
     name: "message-search-to-date",
     autocomplete: "off",
-    'aria-label': "结束日期（可选）",
+    lang: "en-CA",
+    'aria-label': "结束日期",
 });
 (__VLS_ctx.toDate);
+/** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    ...{ onFocus: (__VLS_ctx.activateEndTime) },
+    ...{ onChange: (__VLS_ctx.closeNativePicker) },
+    ...{ class: "clock-entry" },
     type: "time",
     name: "message-search-to-clock",
     step: "60",
     'aria-label': "结束时分",
 });
 (__VLS_ctx.toClock);
+/** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
@@ -637,7 +716,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, fromDate, fromClock, toDate, toClock, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, activateStartTime, activateStartTime, closeNativePicker, closeNativePicker, closeNativePicker, closeNativePicker, fromDate, fromClock, activateEndTime, activateEndTime, toDate, toClock, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },
