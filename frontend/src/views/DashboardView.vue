@@ -1,7 +1,15 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useConnectionStore } from "@/stores/connection";
+import { applyTheme, currentTheme, type AppTheme } from "@/theme";
 
 const connection = useConnectionStore();
+const connectionVerified = computed(() => connection.result?.success === true);
+const themeOptions: Array<{ value: AppTheme; label: string; color: string }> = [
+  { value: "dark", label: "深色", color: "#151920" },
+  { value: "light", label: "浅色", color: "#f4f7f5" },
+  { value: "forest", label: "墨绿", color: "#123522" },
+];
 </script>
 
 <template>
@@ -39,9 +47,9 @@ const connection = useConnectionStore();
       </nav>
 
       <div class="sidebar-foot">
-        <span class="status-dot"></span>
+        <span :class="['status-dot', { unverified: !connectionVerified }]"></span>
         <div>
-          <strong>连接正常</strong>
+          <strong>{{ connectionVerified ? "连接已验证" : "连接未验证" }}</strong>
           <small>{{ connection.form.brokers.length }} 个接入地址</small>
         </div>
       </div>
@@ -54,7 +62,22 @@ const connection = useConnectionStore();
           <strong>{{ connection.displayName }}</strong>
         </div>
         <div class="topbar-actions">
-          <div class="connected-badge"><i></i>CONNECTED</div>
+          <div class="theme-switch" aria-label="界面主题">
+            <button
+              v-for="option in themeOptions"
+              :key="option.value"
+              type="button"
+              :class="{ active: currentTheme === option.value }"
+              :aria-pressed="currentTheme === option.value"
+              :title="`${option.label}主题`"
+              @click="applyTheme(option.value)"
+            >
+              <i :style="{ background: option.color }"></i>{{ option.label }}
+            </button>
+          </div>
+          <div :class="['connected-badge', { unverified: !connectionVerified }]">
+            <i></i>{{ connectionVerified ? "VERIFIED" : "UNVERIFIED" }}
+          </div>
           <RouterLink class="switch-link" to="/connect">切换连接</RouterLink>
         </div>
       </header>

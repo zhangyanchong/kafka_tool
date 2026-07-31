@@ -2,22 +2,13 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
-import { listConsumers } from "@/api/connections";
+import { listConsumers, type KafkaConsumer } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
-
-interface ConsumerRow {
-  groupId: string;
-  state: string;
-  members: number;
-  topics: number;
-  lag: number;
-  consumePerMinute: number;
-}
 
 const keyword = ref("");
 const page = ref(1);
 const pageSize = 10;
-const consumers = ref<ConsumerRow[]>([]);
+const consumers = ref<KafkaConsumer[]>([]);
 const loading = ref(false);
 const loadError = ref("");
 const connection = useConnectionStore();
@@ -31,6 +22,12 @@ const paginatedConsumers = computed(() => {
   const start = (page.value - 1) * pageSize;
   return filteredConsumers.value.slice(start, start + pageSize);
 });
+const stableConsumerCount = computed(() =>
+  consumers.value.filter((consumer) => consumer.state.toLowerCase() === "stable").length,
+);
+const emptyConsumerCount = computed(() =>
+  consumers.value.filter((consumer) => consumer.state.toLowerCase() === "empty").length,
+);
 
 watch(keyword, () => { page.value = 1; });
 watch(() => filteredConsumers.value.length, (total) => {
@@ -43,14 +40,7 @@ async function loadConsumers() {
   loadError.value = "";
   try {
     const response = await listConsumers(connection.form);
-    consumers.value = response.items.map((consumer) => ({
-      groupId: consumer.groupId,
-      state: consumer.state || "Unknown",
-      members: 0,
-      topics: 0,
-      lag: 0,
-      consumePerMinute: 0,
-    }));
+    consumers.value = response.items;
   } catch (reason) {
     loadError.value = reason instanceof Error ? reason.message : "Consumer 读取失败";
   } finally {
@@ -71,7 +61,7 @@ function openConsumer(groupId: string) {
       <div>
         <span class="section-kicker">CONSUMPTION</span>
         <h1>Consumers</h1>
-        <p>查看消费组状态、成员数量、消费速度和消息积压。</p>
+        <p>查看消费组及 Kafka 当前报告的状态和协议。</p>
       </div>
       <button class="refresh-button" type="button" :disabled="loading" @click="loadConsumers">
         <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5" /><path d="M18.5 10A7 7 0 0 0 6 7.5L4 11M5.5 14A7 7 0 0 0 18 16.5l2-3.5" /></svg>
@@ -81,8 +71,8 @@ function openConsumer(groupId: string) {
 
     <div class="summary-grid">
       <article><span>消费组</span><strong>{{ consumers.length }}</strong><small>当前集群</small></article>
-      <article><span>活跃成员</span><strong>—</strong><small>所有 Consumer</small></article>
-      <article><span>总积压</span><strong>—</strong><small>条消息</small></article>
+      <article><span>STABLE</span><strong>{{ stableConsumerCount }}</strong><small>稳定消费组</small></article>
+      <article><span>EMPTY</span><strong>{{ emptyConsumerCount }}</strong><small>无活跃成员的消费组</small></article>
     </div>
 
     <div class="data-card">
@@ -95,7 +85,7 @@ function openConsumer(groupId: string) {
       </div>
 
       <table v-if="filteredConsumers.length">
-        <thead><tr><th>Consumer Group</th><th>状态</th><th>成员</th><th>Topic</th><th>消费速率</th><th>Lag</th></tr></thead>
+        <thead><tr><th>Consumer Group</th><th>状态</th><th>协议类型</th><th>Group 类型</th></tr></thead>
         <tbody>
           <tr
             v-for="consumer in paginatedConsumers"
@@ -106,11 +96,9 @@ function openConsumer(groupId: string) {
             @keydown.enter="openConsumer(consumer.groupId)"
           >
             <td><strong>{{ consumer.groupId }}</strong><span class="row-arrow">→</span></td>
-            <td><span class="row-status">{{ consumer.state }}</span></td>
-            <td>{{ consumer.members }}</td>
-            <td>{{ consumer.topics }}</td>
-            <td>{{ consumer.consumePerMinute.toLocaleString() }} / min</td>
-            <td>{{ consumer.lag.toLocaleString() }}</td>
+            <td><span class="row-status">{{ consumer.state || "未报告" }}</span></td>
+            <td>{{ consumer.protocolType || "未报告" }}</td>
+            <td>{{ consumer.groupType || "未报告" }}</td>
           </tr>
         </tbody>
       </table>

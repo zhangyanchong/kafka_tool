@@ -68,6 +68,8 @@ export interface KafkaTopic {
   name: string;
   partitions: number;
   internal: boolean;
+  healthy: boolean;
+  problemPartitions: number;
 }
 
 export interface KafkaConsumer {
@@ -116,7 +118,10 @@ export interface MetricSnapshot {
 }
 
 export function listTopics(payload: ConnectionPayload) {
-  return postKafka<{ items: KafkaTopic[]; total: number }>("/api/v1/topics/list", payload);
+  return postKafka<{ items: KafkaTopic[]; total: number; totalPartitions: number }>(
+    "/api/v1/topics/list",
+    payload,
+  );
 }
 
 export function searchTopicMessages(

@@ -36,14 +36,17 @@ type MetricSnapshotRequest struct {
 }
 
 type TopicItem struct {
-	Name       string `json:"name"`
-	Partitions int    `json:"partitions"`
-	Internal   bool   `json:"internal"`
+	Name              string `json:"name"`
+	Partitions        int    `json:"partitions"`
+	Internal          bool   `json:"internal"`
+	Healthy           bool   `json:"healthy"`
+	ProblemPartitions int    `json:"problemPartitions"`
 }
 
 type TopicListResponse struct {
-	Items []TopicItem `json:"items"`
-	Total int         `json:"total"`
+	Items           []TopicItem `json:"items"`
+	Total           int         `json:"total"`
+	TotalPartitions int         `json:"totalPartitions"`
 }
 
 type MessageItem struct {

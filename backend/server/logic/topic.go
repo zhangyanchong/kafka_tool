@@ -21,13 +21,41 @@ func FindTopics(ctx context.Context, client *kgo.Client) (model.TopicListRespons
 		return model.TopicListResponse{}, err
 	}
 	items := make([]model.TopicItem, 0, len(metadata.Topics))
+	totalPartitions := 0
 	for _, topic := range metadata.Topics {
-		if topic.Topic == nil || topic.ErrorCode != 0 {
+		if topic.Topic == nil {
 			continue
 		}
-		items = append(items, model.TopicItem{Name: *topic.Topic, Partitions: len(topic.Partitions), Internal: topic.IsInternal})
+		item := topicItemFromMetadata(topic)
+		items = append(items, item)
+		totalPartitions += item.Partitions
 	}
-	return model.TopicListResponse{Items: items, Total: len(items)}, nil
+	return model.TopicListResponse{
+		Items: items, Total: len(items), TotalPartitions: totalPartitions,
+	}, nil
+}
+
+func topicItemFromMetadata(topic kmsg.MetadataResponseTopic) model.TopicItem {
+	problemPartitions := 0
+	for _, partition := range topic.Partitions {
+		underReplicated := len(partition.ISR) < len(partition.Replicas)
+		unavailable := partition.ErrorCode != 0 || partition.Leader < 0 || len(partition.OfflineReplicas) > 0
+		if unavailable || underReplicated {
+			problemPartitions++
+		}
+	}
+
+	name := ""
+	if topic.Topic != nil {
+		name = *topic.Topic
+	}
+	return model.TopicItem{
+		Name:              name,
+		Partitions:        len(topic.Partitions),
+		Internal:          topic.IsInternal,
+		Healthy:           topic.ErrorCode == 0 && problemPartitions == 0,
+		ProblemPartitions: problemPartitions,
+	}
 }
 
 func FindMessages(ctx context.Context, client *kgo.Client, topic string, req model.MessageSearchRequest, fromTime, toTime time.Time) (model.MessageSearchResponse, error) {

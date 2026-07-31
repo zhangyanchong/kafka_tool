@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
+import { currentTheme, renderTheme } from "@/theme";
 
 const store = useConnectionStore();
 const router = useRouter();
@@ -10,6 +11,9 @@ const showPassword = ref(false);
 const brokerCount = computed(
   () => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length,
 );
+
+onMounted(() => renderTheme("light"));
+onBeforeUnmount(() => renderTheme(currentTheme.value));
 
 async function submit() {
   store.form.brokers = brokerText.value

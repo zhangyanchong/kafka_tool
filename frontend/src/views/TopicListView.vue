@@ -9,13 +9,15 @@ interface TopicRow {
   name: string;
   partitions: number;
   internal: boolean;
-  status: "正常" | "异常";
+  healthy: boolean;
+  problemPartitions: number;
 }
 
 const keyword = ref("");
 const page = ref(1);
 const pageSize = 10;
 const topics = ref<TopicRow[]>([]);
+const totalPartitions = ref(0);
 const loading = ref(false);
 const loadError = ref("");
 const connection = useConnectionStore();
@@ -44,12 +46,8 @@ async function loadTopics() {
   loadError.value = "";
   try {
     const response = await listTopics(connection.form);
-    topics.value = response.items.map((topic) => ({
-      name: topic.name,
-      partitions: topic.partitions,
-      internal: topic.internal,
-      status: "正常",
-    }));
+    topics.value = response.items;
+    totalPartitions.value = response.totalPartitions;
   } catch (reason) {
     loadError.value = reason instanceof Error ? reason.message : "Topic 读取失败";
   } finally {
@@ -70,7 +68,7 @@ function openTopic(topic: string) {
       <div>
         <span class="section-kicker">STREAMS</span>
         <h1>Topics</h1>
-        <p>查看当前集群中的 Topic、分区数量和消息生产速率。</p>
+        <p>查看当前集群中的 Topic、分区数量和分区健康状态。</p>
       </div>
       <button class="refresh-button" type="button" :disabled="loading" @click="loadTopics">
         <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5" /><path d="M18.5 10A7 7 0 0 0 6 7.5L4 11M5.5 14A7 7 0 0 0 18 16.5l2-3.5" /></svg>
@@ -80,7 +78,7 @@ function openTopic(topic: string) {
 
     <div class="summary-grid">
       <article><span>TOPIC 总数</span><strong>{{ topics.length }}</strong><small>当前集群</small></article>
-      <article><span>分区总数</span><strong>—</strong><small>全部 Topic</small></article>
+      <article><span>分区总数</span><strong>{{ totalPartitions }}</strong><small>全部 Topic</small></article>
       <article><span>内部 Topic</span><strong>{{ internalTopicCount }}</strong><small>Kafka 系统 Topic</small></article>
     </div>
 
@@ -107,7 +105,11 @@ function openTopic(topic: string) {
             <td><strong>{{ topic.name }}</strong><span class="row-arrow">→</span></td>
             <td>{{ topic.partitions }}</td>
             <td>{{ topic.internal ? "内部" : "业务" }}</td>
-            <td><span class="row-status">{{ topic.status }}</span></td>
+            <td>
+              <span :class="['row-status', { error: !topic.healthy }]">
+                {{ topic.healthy ? "正常" : `异常${topic.problemPartitions ? `（${topic.problemPartitions} 个分区）` : ""}` }}
+              </span>
+            </td>
           </tr>
         </tbody>
       </table>
