@@ -17,6 +17,8 @@ interface MetricPoint extends MetricSnapshot {
   elapsedSeconds: number;
 }
 
+const MAX_METRIC_POINTS = 100;
+
 const connection = useConnectionStore();
 const topics = ref<KafkaTopic[]>([]);
 const consumers = ref<KafkaConsumer[]>([]);
@@ -33,6 +35,8 @@ const consumerOptionsError = ref("");
 const topicPickerOpen = ref(false);
 const consumerPickerOpen = ref(false);
 let timer: number | undefined;
+let monitoringRun = 0;
+let disposed = false;
 
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
@@ -141,7 +145,7 @@ async function loadOptions() {
   }
 }
 
-async function takeSnapshot() {
+async function takeSnapshot(run: number) {
   if (!selectedTopic.value || refreshing.value) return false;
   refreshing.value = true;
   error.value = "";
@@ -151,6 +155,7 @@ async function takeSnapshot() {
       selectedTopic.value,
       monitoredGroup.value,
     );
+    if (disposed || run !== monitoringRun || !monitoring.value) return false;
     const previous = samples.value[samples.value.length - 1];
     let producedDelta = 0;
     let consumedDelta = 0;
@@ -166,10 +171,14 @@ async function takeSnapshot() {
       }
     }
     samples.value.push({ ...snapshot, producedDelta, consumedDelta, elapsedSeconds });
-    samples.value = samples.value.slice(-21);
+    // Keep one extra baseline snapshot so the chart can show exactly 100
+    // correctly calculated interval points.
+    samples.value = samples.value.slice(-(MAX_METRIC_POINTS + 1));
     return true;
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : "指标快照读取失败";
+    if (!disposed && run === monitoringRun) {
+      error.value = reason instanceof Error ? reason.message : "指标快照读取失败";
+    }
     return false;
   } finally {
     refreshing.value = false;
@@ -186,18 +195,23 @@ async function startMonitoring() {
     return;
   }
   if (timer) window.clearInterval(timer);
+  const run = ++monitoringRun;
   samples.value = [];
   monitoredGroup.value = selectedGroup.value;
   monitoring.value = true;
-  const started = await takeSnapshot();
+  const started = await takeSnapshot(run);
+  if (disposed || run !== monitoringRun) return;
   if (!started) {
     monitoring.value = false;
     return;
   }
-  timer = window.setInterval(takeSnapshot, samplingSeconds.value * 1000);
+  timer = window.setInterval(() => {
+    void takeSnapshot(run);
+  }, samplingSeconds.value * 1000);
 }
 
 function stopMonitoring() {
+  monitoringRun += 1;
   if (timer) window.clearInterval(timer);
   timer = undefined;
   monitoring.value = false;
@@ -231,7 +245,8 @@ function closeConsumerPicker() {
 
 onMounted(loadOptions);
 onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer);
+  disposed = true;
+  stopMonitoring();
 });
 </script>
 
@@ -376,6 +391,6 @@ onBeforeUnmount(() => {
       </article>
     </div>
 
-    <p class="sampling-note">第一次快照只建立基线，完成一个完整的 {{ samplingLabel }} 周期后才产生真实增量。切换周期后请点击“开始监控”重新采样。</p>
+    <p class="sampling-note">第一次快照只建立基线，完成一个完整的 {{ samplingLabel }} 周期后才产生真实增量。图表最多保留最近 100 个有效采样点；切换周期后请点击“开始监控”重新采样。</p>
   </section>
 </template>

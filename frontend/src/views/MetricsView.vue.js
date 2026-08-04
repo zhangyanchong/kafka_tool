@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import LineChart from "@/components/LineChart.vue";
 import { fetchMetricSnapshot, listConsumers, listTopics, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
+const MAX_METRIC_POINTS = 100;
 const connection = useConnectionStore();
 const topics = ref([]);
 const consumers = ref([]);
@@ -18,6 +19,8 @@ const consumerOptionsError = ref("");
 const topicPickerOpen = ref(false);
 const consumerPickerOpen = ref(false);
 let timer;
+let monitoringRun = 0;
+let disposed = false;
 const latest = computed(() => samples.value[samples.value.length - 1]);
 const measuredSamples = computed(() => samples.value.slice(1));
 const latestMeasurement = computed(() => measuredSamples.value[measuredSamples.value.length - 1]);
@@ -119,13 +122,15 @@ async function loadOptions() {
         loadingOptions.value = false;
     }
 }
-async function takeSnapshot() {
+async function takeSnapshot(run) {
     if (!selectedTopic.value || refreshing.value)
         return false;
     refreshing.value = true;
     error.value = "";
     try {
         const snapshot = await fetchMetricSnapshot(connection.form, selectedTopic.value, monitoredGroup.value);
+        if (disposed || run !== monitoringRun || !monitoring.value)
+            return false;
         const previous = samples.value[samples.value.length - 1];
         let producedDelta = 0;
         let consumedDelta = 0;
@@ -138,11 +143,15 @@ async function takeSnapshot() {
             }
         }
         samples.value.push({ ...snapshot, producedDelta, consumedDelta, elapsedSeconds });
-        samples.value = samples.value.slice(-21);
+        // Keep one extra baseline snapshot so the chart can show exactly 100
+        // correctly calculated interval points.
+        samples.value = samples.value.slice(-(MAX_METRIC_POINTS + 1));
         return true;
     }
     catch (reason) {
-        error.value = reason instanceof Error ? reason.message : "指标快照读取失败";
+        if (!disposed && run === monitoringRun) {
+            error.value = reason instanceof Error ? reason.message : "指标快照读取失败";
+        }
         return false;
     }
     finally {
@@ -160,17 +169,23 @@ async function startMonitoring() {
     }
     if (timer)
         window.clearInterval(timer);
+    const run = ++monitoringRun;
     samples.value = [];
     monitoredGroup.value = selectedGroup.value;
     monitoring.value = true;
-    const started = await takeSnapshot();
+    const started = await takeSnapshot(run);
+    if (disposed || run !== monitoringRun)
+        return;
     if (!started) {
         monitoring.value = false;
         return;
     }
-    timer = window.setInterval(takeSnapshot, samplingSeconds.value * 1000);
+    timer = window.setInterval(() => {
+        void takeSnapshot(run);
+    }, samplingSeconds.value * 1000);
 }
 function stopMonitoring() {
+    monitoringRun += 1;
     if (timer)
         window.clearInterval(timer);
     timer = undefined;
@@ -199,8 +214,8 @@ function closeConsumerPicker() {
 }
 onMounted(loadOptions);
 onBeforeUnmount(() => {
-    if (timer)
-        window.clearInterval(timer);
+    disposed = true;
+    stopMonitoring();
 });
 const __VLS_ctx = {
     ...{},

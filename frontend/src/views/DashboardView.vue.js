@@ -209,11 +209,41 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.main, __VLS_intrinsics.main)({
 });
 /** @type {__VLS_StyleScopedClasses['page-content']} */ ;
 let __VLS_24;
-/** @ts-ignore @type { | typeof __VLS_components.RouterView} */
+/** @ts-ignore @type { | typeof __VLS_components.RouterView | typeof __VLS_components.RouterView} */
 RouterView;
 // @ts-ignore
 const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({}));
 const __VLS_26 = __VLS_25({}, ...__VLS_functionalComponentArgsRest(__VLS_25));
+{
+    const { default: __VLS_29 } = __VLS_27.slots;
+    const [{ Component, route }] = __VLS_vSlot(__VLS_29);
+    let __VLS_30;
+    /** @ts-ignore @type { | typeof __VLS_components.KeepAlive | typeof __VLS_components.KeepAlive} */
+    KeepAlive;
+    // @ts-ignore
+    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({}));
+    const __VLS_32 = __VLS_31({}, ...__VLS_functionalComponentArgsRest(__VLS_31));
+    const { default: __VLS_35 } = __VLS_33.slots;
+    if (route.meta.keepAlive) {
+        const __VLS_36 = (Component);
+        // @ts-ignore
+        const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({}));
+        const __VLS_38 = __VLS_37({}, ...__VLS_functionalComponentArgsRest(__VLS_37));
+    }
+    // @ts-ignore
+    [];
+    var __VLS_33;
+    if (!route.meta.keepAlive) {
+        const __VLS_41 = (Component);
+        // @ts-ignore
+        const __VLS_42 = __VLS_asFunctionalComponent1(__VLS_41, new __VLS_41({}));
+        const __VLS_43 = __VLS_42({}, ...__VLS_functionalComponentArgsRest(__VLS_42));
+    }
+    // @ts-ignore
+    [];
+    __VLS_27.slots['' /* empty slot name completion */];
+}
+var __VLS_27;
 // @ts-ignore
 [];
 const __VLS_export = (await import('vue')).defineComponent({});

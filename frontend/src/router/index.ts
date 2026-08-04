@@ -35,6 +35,7 @@ export default createRouter({
           path: "view",
           name: "metrics-view",
           component: () => import("@/views/MetricsView.vue"),
+          meta: { keepAlive: true },
         },
       ],
     },
