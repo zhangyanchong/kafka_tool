@@ -1,10 +1,11 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import ConnectView from "@/views/ConnectView.vue";
+import ClusterHomeView from "@/views/ClusterHomeView.vue";
 
 export default createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: "/", redirect: "/connect" },
+    { path: "/", name: "clusters", component: ClusterHomeView },
     { path: "/connect", name: "connect", component: ConnectView },
     {
       path: "/dashboard",

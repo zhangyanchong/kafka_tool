@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
 import { currentTheme, renderTheme } from "@/theme";
 
 const store = useConnectionStore();
 const router = useRouter();
-const brokerText = ref(store.form.brokers.join("\n"));
+const route = useRoute();
+const brokerText = ref("");
 const showPassword = ref(false);
+const reconnecting = computed(() => typeof route.query.id === "string");
 const brokerCount = computed(
   () => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length,
 );
 
-onMounted(() => renderTheme("light"));
+onMounted(() => {
+  renderTheme("light");
+  const connectionId = typeof route.query.id === "string" ? route.query.id : "";
+  if (!connectionId || !store.activate(connectionId)) store.beginAdd();
+  brokerText.value = store.form.brokers.join("\n");
+});
 onBeforeUnmount(() => renderTheme(currentTheme.value));
 
 async function submit() {
@@ -53,9 +60,11 @@ async function submit() {
     <section class="form-panel">
       <div class="form-wrap">
         <header>
-          <span class="step">01 / CONNECT</span>
-          <h2>连接 Kafka</h2>
-          <p>添加一个 Broker 即可发现整个集群，也可以填写多个地址提高连接可用性。</p>
+          <RouterLink class="back-link" to="/">← 返回集群列表</RouterLink>
+          <span class="step">{{ reconnecting ? "RECONNECT" : "ADD / CONNECT" }}</span>
+          <h2>{{ reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群" }}</h2>
+          <p v-if="reconnecting">出于安全考虑密码不会保存在本地，请重新输入密码后进入集群。</p>
+          <p v-else>添加一个 Broker 即可发现整个集群，也可以填写多个地址提高连接可用性。</p>
         </header>
 
         <form @submit.prevent="submit">

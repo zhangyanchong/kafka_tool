@@ -78,7 +78,7 @@ const themeOptions: Array<{ value: AppTheme; label: string; color: string }> = [
           <div :class="['connected-badge', { unverified: !connectionVerified }]">
             <i></i>{{ connectionVerified ? "VERIFIED" : "UNVERIFIED" }}
           </div>
-          <RouterLink class="switch-link" to="/connect">切换连接</RouterLink>
+          <RouterLink class="switch-link" to="/">切换集群</RouterLink>
         </div>
       </header>
       <main class="page-content">

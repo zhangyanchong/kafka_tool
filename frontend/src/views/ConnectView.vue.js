@@ -1,13 +1,21 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
 import { currentTheme, renderTheme } from "@/theme";
 const store = useConnectionStore();
 const router = useRouter();
-const brokerText = ref(store.form.brokers.join("\n"));
+const route = useRoute();
+const brokerText = ref("");
 const showPassword = ref(false);
+const reconnecting = computed(() => typeof route.query.id === "string");
 const brokerCount = computed(() => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length);
-onMounted(() => renderTheme("light"));
+onMounted(() => {
+    renderTheme("light");
+    const connectionId = typeof route.query.id === "string" ? route.query.id : "";
+    if (!connectionId || !store.activate(connectionId))
+        store.beginAdd();
+    brokerText.value = store.form.brokers.join("\n");
+});
 onBeforeUnmount(() => renderTheme(currentTheme.value));
 async function submit() {
     store.form.brokers = brokerText.value
@@ -95,12 +103,34 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 });
 /** @type {__VLS_StyleScopedClasses['form-wrap']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({});
+let __VLS_0;
+/** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
+RouterLink;
+// @ts-ignore
+const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
+    ...{ class: "back-link" },
+    to: "/",
+}));
+const __VLS_2 = __VLS_1({
+    ...{ class: "back-link" },
+    to: "/",
+}, ...__VLS_functionalComponentArgsRest(__VLS_1));
+/** @type {__VLS_StyleScopedClasses['back-link']} */ ;
+const { default: __VLS_5 } = __VLS_3.slots;
+var __VLS_3;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
     ...{ class: "step" },
 });
 /** @type {__VLS_StyleScopedClasses['step']} */ ;
+(__VLS_ctx.reconnecting ? "RECONNECT" : "ADD / CONNECT");
 __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+(__VLS_ctx.reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群");
+if (__VLS_ctx.reconnecting) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
     ...{ onSubmit: (__VLS_ctx.submit) },
 });
@@ -207,7 +237,7 @@ if (__VLS_ctx.store.usesSasl) {
                     throw 0;
                 return (__VLS_ctx.showPassword = !__VLS_ctx.showPassword);
                 // @ts-ignore
-                [submit, store, store, store, store, store, store, store, brokerCount, brokerText, showPassword, showPassword, showPassword,];
+                [reconnecting, reconnecting, reconnecting, submit, store, store, store, store, store, store, store, brokerCount, brokerText, showPassword, showPassword, showPassword,];
             } },
         type: "button",
     });

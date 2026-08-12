@@ -193,11 +193,11 @@ RouterLink;
 // @ts-ignore
 const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
     ...{ class: "switch-link" },
-    to: "/connect",
+    to: "/",
 }));
 const __VLS_20 = __VLS_19({
     ...{ class: "switch-link" },
-    to: "/connect",
+    to: "/",
 }, ...__VLS_functionalComponentArgsRest(__VLS_19));
 /** @type {__VLS_StyleScopedClasses['switch-link']} */ ;
 const { default: __VLS_23 } = __VLS_21.slots;
