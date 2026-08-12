@@ -19,6 +19,17 @@ function enterCluster(id: string) {
   router.push("/dashboard");
 }
 
+function editCluster(id: string) {
+  router.push({ path: "/connect", query: { id, mode: "edit" } });
+}
+
+function deleteCluster(id: string, name: string) {
+  if (!window.confirm(`确定删除集群“${name}”吗？\n\n此操作只会删除本地保存的连接配置，不会影响 Kafka 服务端数据。`)) {
+    return;
+  }
+  store.deleteConnection(id);
+}
+
 function formatTime(value: string) {
   if (!value) return "尚未验证";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -61,18 +72,36 @@ function formatTime(value: string) {
       </div>
 
       <div v-if="store.connections.length" class="cluster-grid">
-        <button
+        <article
           v-for="connection in store.connections"
           :key="connection.id"
           class="cluster-card"
-          type="button"
+          tabindex="0"
+          role="button"
           @click="enterCluster(connection.id)"
+          @keydown.enter.self="enterCluster(connection.id)"
+          @keydown.space.self.prevent="enterCluster(connection.id)"
         >
           <div class="cluster-card-top">
             <span class="cluster-icon">
               <i></i><i></i><i></i>
             </span>
-            <span class="cluster-status"><i></i> 已保存</span>
+            <div class="cluster-card-controls">
+              <span class="cluster-status"><i></i> 已保存</span>
+              <div class="cluster-card-actions">
+                <button
+                  type="button"
+                  :aria-label="`修改 ${connection.config.name || connection.config.brokers[0] || 'Kafka 集群'}`"
+                  @click.stop="editCluster(connection.id)"
+                >修改</button>
+                <button
+                  class="danger"
+                  type="button"
+                  :aria-label="`删除 ${connection.config.name || connection.config.brokers[0] || 'Kafka 集群'}`"
+                  @click.stop="deleteCluster(connection.id, connection.config.name || connection.config.brokers[0] || 'Kafka 集群')"
+                >删除</button>
+              </div>
+            </div>
           </div>
           <div class="cluster-card-main">
             <h2>{{ connection.config.name || connection.config.brokers[0] || "Kafka 集群" }}</h2>
@@ -83,7 +112,7 @@ function formatTime(value: string) {
             <span>上次连接 {{ formatTime(connection.lastConnectedAt) }}</span>
             <b>→</b>
           </footer>
-        </button>
+        </article>
 
         <RouterLink class="cluster-card add-card" to="/connect">
           <span class="add-card-icon">＋</span>

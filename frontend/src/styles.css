@@ -117,6 +117,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .cluster-grid { margin-top: 38px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .cluster-card { min-width: 0; min-height: 240px; padding: 22px; display: flex; flex-direction: column; color: #17231c; background: #fff; border: 1px solid #d8e1db; border-radius: 12px; cursor: pointer; text-align: left; box-shadow: 0 8px 24px rgba(34,62,45,.04); transition: transform .18s, border-color .18s, box-shadow .18s; }
 .cluster-card:hover { transform: translateY(-3px); border-color: #f08a6d; box-shadow: 0 14px 30px rgba(34,62,45,.09); }
+.cluster-card:focus-visible { outline: 3px solid rgba(242,96,57,.22); outline-offset: 2px; }
 .cluster-card-top { display: flex; align-items: center; justify-content: space-between; }
 .cluster-icon { width: 42px; height: 42px; padding: 10px; display: flex; align-items: end; gap: 3px; background: rgba(242,96,57,.09); border-radius: 10px; }
 .cluster-icon i { width: 5px; background: #f26039; border-radius: 3px; }
@@ -125,6 +126,12 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .cluster-icon i:nth-child(3) { height: 15px; }
 .cluster-status { display: flex; align-items: center; gap: 6px; color: #31865a; font-size: 10px; font-weight: 700; }
 .cluster-status i { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.cluster-card-controls { display: grid; justify-items: end; gap: 11px; }
+.cluster-card-actions { display: flex; gap: 6px; }
+.cluster-card-actions button { height: 27px; padding: 0 9px; color: #59675e; background: #f6f8f7; border: 1px solid #d7e0da; border-radius: 6px; cursor: pointer; font-size: 9px; font-weight: 700; }
+.cluster-card-actions button:hover { color: #17231c; border-color: #aab8af; }
+.cluster-card-actions button.danger { color: #b44426; background: #fff5f1; border-color: #f0c9bd; }
+.cluster-card-actions button.danger:hover { color: #8f2f18; border-color: #df9d89; }
 .cluster-card-main { margin: 24px 0 22px; }
 .cluster-card-main h2 { overflow: hidden; margin: 0 0 9px; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
 .cluster-card-main p { overflow: hidden; margin: 0; color: #77847c; font-size: 11px; line-height: 1.6; text-overflow: ellipsis; white-space: nowrap; }

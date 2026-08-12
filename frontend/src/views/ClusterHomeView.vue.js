@@ -15,6 +15,15 @@ function enterCluster(id) {
     }
     router.push("/dashboard");
 }
+function editCluster(id) {
+    router.push({ path: "/connect", query: { id, mode: "edit" } });
+}
+function deleteCluster(id, name) {
+    if (!window.confirm(`确定删除集群“${name}”吗？\n\n此操作只会删除本地保存的连接配置，不会影响 Kafka 服务端数据。`)) {
+        return;
+    }
+    store.deleteConnection(id);
+}
 function formatTime(value) {
     if (!value)
         return "尚未验证";
@@ -129,7 +138,7 @@ if (__VLS_ctx.store.connections.length) {
     });
     /** @type {__VLS_StyleScopedClasses['cluster-grid']} */ ;
     for (const [connection] of __VLS_vFor((__VLS_ctx.store.connections))) {
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
             ...{ onClick: (...[$event]) => {
                     if (!(__VLS_ctx.store.connections.length))
                         throw 0;
@@ -137,9 +146,24 @@ if (__VLS_ctx.store.connections.length) {
                     // @ts-ignore
                     [store, store, enterCluster,];
                 } },
+            ...{ onKeydown: (...[$event]) => {
+                    if (!(__VLS_ctx.store.connections.length))
+                        throw 0;
+                    return (__VLS_ctx.enterCluster(connection.id));
+                    // @ts-ignore
+                    [enterCluster,];
+                } },
+            ...{ onKeydown: (...[$event]) => {
+                    if (!(__VLS_ctx.store.connections.length))
+                        throw 0;
+                    return (__VLS_ctx.enterCluster(connection.id));
+                    // @ts-ignore
+                    [enterCluster,];
+                } },
             key: (connection.id),
             ...{ class: "cluster-card" },
-            type: "button",
+            tabindex: "0",
+            role: "button",
         });
         /** @type {__VLS_StyleScopedClasses['cluster-card']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -153,11 +177,43 @@ if (__VLS_ctx.store.connections.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "cluster-card-controls" },
+        });
+        /** @type {__VLS_StyleScopedClasses['cluster-card-controls']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
             ...{ class: "cluster-status" },
         });
         /** @type {__VLS_StyleScopedClasses['cluster-status']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "cluster-card-actions" },
+        });
+        /** @type {__VLS_StyleScopedClasses['cluster-card-actions']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.connections.length))
+                        throw 0;
+                    return (__VLS_ctx.editCluster(connection.id));
+                    // @ts-ignore
+                    [editCluster,];
+                } },
+            type: "button",
+            'aria-label': (`修改 ${connection.config.name || connection.config.brokers[0] || 'Kafka 集群'}`),
+        });
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.connections.length))
+                        throw 0;
+                    return (__VLS_ctx.deleteCluster(connection.id, connection.config.name || connection.config.brokers[0] || 'Kafka 集群'));
+                    // @ts-ignore
+                    [deleteCluster,];
+                } },
+            ...{ class: "danger" },
+            type: "button",
+            'aria-label': (`删除 ${connection.config.name || connection.config.brokers[0] || 'Kafka 集群'}`),
+        });
+        /** @type {__VLS_StyleScopedClasses['danger']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "cluster-card-main" },
         });

@@ -9,7 +9,8 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
-const reconnecting = computed(() => typeof route.query.id === "string");
+const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
+const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
 const brokerCount = computed(
   () => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length,
 );
@@ -17,7 +18,12 @@ const brokerCount = computed(
 onMounted(() => {
   renderTheme("light");
   const connectionId = typeof route.query.id === "string" ? route.query.id : "";
-  if (!connectionId || !store.activate(connectionId)) store.beginAdd();
+  const loaded = editing.value
+    ? store.beginEdit(connectionId)
+    : connectionId
+      ? store.activate(connectionId)
+      : false;
+  if (!loaded) store.beginAdd();
   brokerText.value = store.form.brokers.join("\n");
 });
 onBeforeUnmount(() => renderTheme(currentTheme.value));
@@ -28,7 +34,7 @@ async function submit() {
     .map((item) => item.trim())
     .filter(Boolean);
   if (await store.test()) {
-    window.setTimeout(() => router.push("/dashboard"), 900);
+    window.setTimeout(() => router.push(editing.value ? "/" : "/dashboard"), 900);
   }
 }
 </script>
@@ -61,9 +67,10 @@ async function submit() {
       <div class="form-wrap">
         <header>
           <RouterLink class="back-link" to="/">← 返回集群列表</RouterLink>
-          <span class="step">{{ reconnecting ? "RECONNECT" : "ADD / CONNECT" }}</span>
-          <h2>{{ reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群" }}</h2>
-          <p v-if="reconnecting">出于安全考虑密码不会保存在本地，请重新输入密码后进入集群。</p>
+          <span class="step">{{ editing ? "EDIT CLUSTER" : reconnecting ? "RECONNECT" : "ADD / CONNECT" }}</span>
+          <h2>{{ editing ? "修改 Kafka 集群" : reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群" }}</h2>
+          <p v-if="editing">修改配置后需要重新测试连接；密码不会保存在本地。</p>
+          <p v-else-if="reconnecting">出于安全考虑密码不会保存在本地，请重新输入密码后进入集群。</p>
           <p v-else>添加一个 Broker 即可发现整个集群，也可以填写多个地址提高连接可用性。</p>
         </header>
 
@@ -150,7 +157,7 @@ async function submit() {
           </div>
 
           <button class="submit" type="submit" :disabled="store.testing">
-            <span>{{ store.testing ? "正在连接…" : "测试并连接" }}</span>
+            <span>{{ store.testing ? "正在连接…" : editing ? "测试并保存" : "测试并连接" }}</span>
             <b>{{ store.testing ? "···" : "→" }}</b>
           </button>
         </form>

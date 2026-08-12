@@ -7,12 +7,18 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
-const reconnecting = computed(() => typeof route.query.id === "string");
+const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
+const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
 const brokerCount = computed(() => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length);
 onMounted(() => {
     renderTheme("light");
     const connectionId = typeof route.query.id === "string" ? route.query.id : "";
-    if (!connectionId || !store.activate(connectionId))
+    const loaded = editing.value
+        ? store.beginEdit(connectionId)
+        : connectionId
+            ? store.activate(connectionId)
+            : false;
+    if (!loaded)
         store.beginAdd();
     brokerText.value = store.form.brokers.join("\n");
 });
@@ -23,7 +29,7 @@ async function submit() {
         .map((item) => item.trim())
         .filter(Boolean);
     if (await store.test()) {
-        window.setTimeout(() => router.push("/dashboard"), 900);
+        window.setTimeout(() => router.push(editing.value ? "/" : "/dashboard"), 900);
     }
 }
 const __VLS_ctx = {
@@ -122,10 +128,13 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
     ...{ class: "step" },
 });
 /** @type {__VLS_StyleScopedClasses['step']} */ ;
-(__VLS_ctx.reconnecting ? "RECONNECT" : "ADD / CONNECT");
+(__VLS_ctx.editing ? "EDIT CLUSTER" : __VLS_ctx.reconnecting ? "RECONNECT" : "ADD / CONNECT");
 __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-(__VLS_ctx.reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群");
-if (__VLS_ctx.reconnecting) {
+(__VLS_ctx.editing ? "修改 Kafka 集群" : __VLS_ctx.reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群");
+if (__VLS_ctx.editing) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+}
+else if (__VLS_ctx.reconnecting) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
 }
 else {
@@ -237,7 +246,7 @@ if (__VLS_ctx.store.usesSasl) {
                     throw 0;
                 return (__VLS_ctx.showPassword = !__VLS_ctx.showPassword);
                 // @ts-ignore
-                [reconnecting, reconnecting, reconnecting, submit, store, store, store, store, store, store, store, brokerCount, brokerText, showPassword, showPassword, showPassword,];
+                [editing, editing, editing, reconnecting, reconnecting, reconnecting, submit, store, store, store, store, store, store, store, brokerCount, brokerText, showPassword, showPassword, showPassword,];
             } },
         type: "button",
     });
@@ -284,10 +293,10 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['submit']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-(__VLS_ctx.store.testing ? "正在连接…" : "测试并连接");
+(__VLS_ctx.store.testing ? "正在连接…" : __VLS_ctx.editing ? "测试并保存" : "测试并连接");
 __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
 (__VLS_ctx.store.testing ? "···" : "→");
 // @ts-ignore
-[store, store, store, store, store, store, store, store, store, store, showPassword,];
+[editing, store, store, store, store, store, store, store, store, store, store, showPassword,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

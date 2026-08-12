@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import type { ConnectionPayload, ConnectionResult } from "@/api/connections";
-import { testConnection } from "@/api/connections";
+import type { ConnectionPayload, ConnectionResult } from "../api/connections.js";
+import { testConnection } from "../api/connections.js";
 
 const LEGACY_STORAGE_KEY = "kafka-tool.connection";
 const STORAGE_KEY = "kafka-tool.connections";
@@ -59,6 +59,7 @@ export const useConnectionStore = defineStore("connection", () => {
   const initialActiveId = localStorage.getItem(ACTIVE_KEY) || "";
   const initialConnection = connections.value.find((item) => item.id === initialActiveId);
   const activeId = ref(initialConnection?.id || "");
+  const editingId = ref("");
   const form = ref<ConnectionPayload>(
     initialConnection ? withoutPassword(initialConnection.config) : { ...defaults, brokers: [...defaults.brokers] },
   );
@@ -78,6 +79,7 @@ export const useConnectionStore = defineStore("connection", () => {
   }
 
   function beginAdd() {
+    editingId.value = "";
     activeId.value = "";
     form.value = { ...defaults, brokers: [...defaults.brokers] };
     result.value = null;
@@ -87,6 +89,7 @@ export const useConnectionStore = defineStore("connection", () => {
   function activate(id: string) {
     const connection = connections.value.find((item) => item.id === id);
     if (!connection) return false;
+    editingId.value = "";
     activeId.value = id;
     form.value = { ...withoutPassword(connection.config), password: runtimePasswords.get(id) || "" };
     result.value = connection.lastConnectedAt
@@ -97,8 +100,36 @@ export const useConnectionStore = defineStore("connection", () => {
     return true;
   }
 
+  function beginEdit(id: string) {
+    const connection = connections.value.find((item) => item.id === id);
+    if (!connection) return false;
+    editingId.value = id;
+    form.value = { ...withoutPassword(connection.config), password: runtimePasswords.get(id) || "" };
+    result.value = null;
+    error.value = "";
+    return true;
+  }
+
+  function deleteConnection(id: string) {
+    const index = connections.value.findIndex((item) => item.id === id);
+    if (index === -1) return false;
+
+    connections.value.splice(index, 1);
+    runtimePasswords.delete(id);
+    if (editingId.value === id) editingId.value = "";
+    if (activeId.value === id) {
+      activeId.value = "";
+      form.value = { ...defaults, brokers: [...defaults.brokers] };
+      result.value = null;
+      error.value = "";
+      localStorage.removeItem(ACTIVE_KEY);
+    }
+    persistConnections();
+    return true;
+  }
+
   function saveCurrentConnection() {
-    const id = activeId.value || createId();
+    const id = editingId.value || activeId.value || createId();
     const saved: SavedConnection = {
       id,
       config: withoutPassword(form.value),
@@ -110,6 +141,7 @@ export const useConnectionStore = defineStore("connection", () => {
     if (index === -1) connections.value.push(saved);
     else connections.value[index] = saved;
     activeId.value = id;
+    editingId.value = "";
     localStorage.setItem(ACTIVE_KEY, id);
     persistConnections();
   }
@@ -141,7 +173,9 @@ export const useConnectionStore = defineStore("connection", () => {
     usesTls,
     displayName,
     beginAdd,
+    beginEdit,
     activate,
+    deleteConnection,
     test,
   };
 });
