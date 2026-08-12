@@ -52,22 +52,63 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "cluster-home-actions" },
+});
+/** @type {__VLS_StyleScopedClasses['cluster-home-actions']} */ ;
 let __VLS_0;
 /** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
 RouterLink;
 // @ts-ignore
 const __VLS_1 = __VLS_asFunctionalComponent1(__VLS_0, new __VLS_0({
+    ...{ class: "tools-link-button" },
+    to: "/tools",
+}));
+const __VLS_2 = __VLS_1({
+    ...{ class: "tools-link-button" },
+    to: "/tools",
+}, ...__VLS_functionalComponentArgsRest(__VLS_1));
+/** @type {__VLS_StyleScopedClasses['tools-link-button']} */ ;
+const { default: __VLS_5 } = __VLS_3.slots;
+__VLS_asFunctionalElement1(__VLS_intrinsics.svg, __VLS_intrinsics.svg)({
+    viewBox: "0 0 24 24",
+    'aria-hidden': "true",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.path)({
+    d: "M8 6h8M8 12h8M8 18h8",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.circle)({
+    cx: "4",
+    cy: "6",
+    r: "1",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.circle)({
+    cx: "4",
+    cy: "12",
+    r: "1",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.circle)({
+    cx: "4",
+    cy: "18",
+    r: "1",
+});
+var __VLS_3;
+let __VLS_6;
+/** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
+RouterLink;
+// @ts-ignore
+const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
     ...{ class: "add-cluster-button" },
     to: "/connect",
 }));
-const __VLS_2 = __VLS_1({
+const __VLS_8 = __VLS_7({
     ...{ class: "add-cluster-button" },
     to: "/connect",
-}, ...__VLS_functionalComponentArgsRest(__VLS_1));
+}, ...__VLS_functionalComponentArgsRest(__VLS_7));
 /** @type {__VLS_StyleScopedClasses['add-cluster-button']} */ ;
-const { default: __VLS_5 } = __VLS_3.slots;
+const { default: __VLS_11 } = __VLS_9.slots;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-var __VLS_3;
+var __VLS_9;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "cluster-home-content" },
 });
@@ -134,21 +175,21 @@ if (__VLS_ctx.store.connections.length) {
         // @ts-ignore
         [formatTime,];
     }
-    let __VLS_6;
+    let __VLS_12;
     /** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
     RouterLink;
     // @ts-ignore
-    const __VLS_7 = __VLS_asFunctionalComponent1(__VLS_6, new __VLS_6({
+    const __VLS_13 = __VLS_asFunctionalComponent1(__VLS_12, new __VLS_12({
         ...{ class: "cluster-card add-card" },
         to: "/connect",
     }));
-    const __VLS_8 = __VLS_7({
+    const __VLS_14 = __VLS_13({
         ...{ class: "cluster-card add-card" },
         to: "/connect",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_7));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_13));
     /** @type {__VLS_StyleScopedClasses['cluster-card']} */ ;
     /** @type {__VLS_StyleScopedClasses['add-card']} */ ;
-    const { default: __VLS_11 } = __VLS_9.slots;
+    const { default: __VLS_17 } = __VLS_15.slots;
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
         ...{ class: "add-card-icon" },
     });
@@ -157,7 +198,7 @@ if (__VLS_ctx.store.connections.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
     // @ts-ignore
     [];
-    var __VLS_9;
+    var __VLS_15;
 }
 else {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -170,23 +211,23 @@ else {
     /** @type {__VLS_StyleScopedClasses['add-card-icon']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    let __VLS_12;
+    let __VLS_18;
     /** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
     RouterLink;
     // @ts-ignore
-    const __VLS_13 = __VLS_asFunctionalComponent1(__VLS_12, new __VLS_12({
+    const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
         ...{ class: "add-cluster-button" },
         to: "/connect",
     }));
-    const __VLS_14 = __VLS_13({
+    const __VLS_20 = __VLS_19({
         ...{ class: "add-cluster-button" },
         to: "/connect",
-    }, ...__VLS_functionalComponentArgsRest(__VLS_13));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_19));
     /** @type {__VLS_StyleScopedClasses['add-cluster-button']} */ ;
-    const { default: __VLS_17 } = __VLS_15.slots;
+    const { default: __VLS_23 } = __VLS_21.slots;
     // @ts-ignore
     [];
-    var __VLS_15;
+    var __VLS_21;
 }
 // @ts-ignore
 [];

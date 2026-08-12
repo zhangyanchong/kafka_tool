@@ -37,9 +37,20 @@ function formatTime(value: string) {
         <span class="brand-mark"><i></i><i></i><i></i></span>
         <span>Kafka Tool</span>
       </div>
-      <RouterLink class="add-cluster-button" to="/connect">
-        <span>＋</span> 添加集群
-      </RouterLink>
+      <div class="cluster-home-actions">
+        <RouterLink class="tools-link-button" to="/tools">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 6h8M8 12h8M8 18h8" />
+            <circle cx="4" cy="6" r="1" />
+            <circle cx="4" cy="12" r="1" />
+            <circle cx="4" cy="18" r="1" />
+          </svg>
+          常用工具
+        </RouterLink>
+        <RouterLink class="add-cluster-button" to="/connect">
+          <span>＋</span> 添加集群
+        </RouterLink>
+      </div>
     </header>
 
     <section class="cluster-home-content">

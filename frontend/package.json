@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build && node ../desktop/scripts/sync-frontend.mjs",
-    "typecheck": "vue-tsc -b"
+    "typecheck": "vue-tsc -b",
+    "test:json": "npm run typecheck && node --test src/utils/json.test.mjs",
+    "test:base64": "npm run typecheck && node --test src/utils/base64.test.mjs",
+    "test:tools": "npm run typecheck && node --test src/utils/*.test.mjs"
   },
   "dependencies": {
     "pinia": "^3.0.3",

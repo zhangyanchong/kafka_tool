@@ -1,8 +1,20 @@
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
 import { applyTheme, currentTheme } from "@/theme";
 const connection = useConnectionStore();
+const route = useRoute();
 const connectionVerified = computed(() => connection.result?.success === true);
+const isToolsPage = computed(() => route.name === "dashboard-tools");
+const kafkaReturnPath = computed(() => {
+    const from = typeof route.query.from === "string" ? route.query.from : "";
+    return from.startsWith("/dashboard/") && !from.startsWith("/dashboard/tools")
+        ? from
+        : "/dashboard/topics";
+});
+const toolsToggleTarget = computed(() => isToolsPage.value
+    ? kafkaReturnPath.value
+    : { path: "/dashboard/tools", query: { from: route.fullPath } });
 const themeOptions = [
     { value: "dark", label: "深色", color: "#151920" },
     { value: "light", label: "浅色", color: "#f4f7f5" },
@@ -154,6 +166,46 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "topbar-actions" },
 });
 /** @type {__VLS_StyleScopedClasses['topbar-actions']} */ ;
+let __VLS_18;
+/** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
+RouterLink;
+// @ts-ignore
+const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
+    ...{ class: (['topbar-tools-link', { active: __VLS_ctx.isToolsPage }]) },
+    to: (__VLS_ctx.toolsToggleTarget),
+}));
+const __VLS_20 = __VLS_19({
+    ...{ class: (['topbar-tools-link', { active: __VLS_ctx.isToolsPage }]) },
+    to: (__VLS_ctx.toolsToggleTarget),
+}, ...__VLS_functionalComponentArgsRest(__VLS_19));
+/** @type {__VLS_StyleScopedClasses['active']} */ ;
+/** @type {__VLS_StyleScopedClasses['topbar-tools-link']} */ ;
+const { default: __VLS_23 } = __VLS_21.slots;
+if (__VLS_ctx.isToolsPage) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.svg, __VLS_intrinsics.svg)({
+        viewBox: "0 0 24 24",
+        'aria-hidden': "true",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.path)({
+        d: "M19 12H5M10 7l-5 5 5 5",
+    });
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.svg, __VLS_intrinsics.svg)({
+        viewBox: "0 0 24 24",
+        'aria-hidden': "true",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.path)({
+        d: "M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5z",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.path)({
+        d: "M16 13v6M13 16h6",
+    });
+}
+(__VLS_ctx.isToolsPage ? "返回 Kafka" : "常用工具");
+// @ts-ignore
+[connectionVerified, connectionVerified, connection, connection, isToolsPage, isToolsPage, isToolsPage, toolsToggleTarget,];
+var __VLS_21;
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "theme-switch" },
     'aria-label': "界面主题",
@@ -164,7 +216,7 @@ for (const [option] of __VLS_vFor((__VLS_ctx.themeOptions))) {
         ...{ onClick: (...[$event]) => {
                 return (__VLS_ctx.applyTheme(option.value));
                 // @ts-ignore
-                [connectionVerified, connectionVerified, connection, connection, themeOptions, applyTheme,];
+                [themeOptions, applyTheme,];
             } },
         key: (option.value),
         type: "button",
@@ -187,63 +239,75 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 /** @type {__VLS_StyleScopedClasses['connected-badge']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.i, __VLS_intrinsics.i)({});
 (__VLS_ctx.connectionVerified ? "VERIFIED" : "UNVERIFIED");
-let __VLS_18;
+let __VLS_24;
 /** @ts-ignore @type { | typeof __VLS_components.RouterLink | typeof __VLS_components.RouterLink} */
 RouterLink;
 // @ts-ignore
-const __VLS_19 = __VLS_asFunctionalComponent1(__VLS_18, new __VLS_18({
+const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({
     ...{ class: "switch-link" },
     to: "/",
 }));
-const __VLS_20 = __VLS_19({
+const __VLS_26 = __VLS_25({
     ...{ class: "switch-link" },
     to: "/",
-}, ...__VLS_functionalComponentArgsRest(__VLS_19));
+}, ...__VLS_functionalComponentArgsRest(__VLS_25));
 /** @type {__VLS_StyleScopedClasses['switch-link']} */ ;
-const { default: __VLS_23 } = __VLS_21.slots;
+const { default: __VLS_29 } = __VLS_27.slots;
 // @ts-ignore
 [connectionVerified, connectionVerified,];
-var __VLS_21;
+var __VLS_27;
 __VLS_asFunctionalElement1(__VLS_intrinsics.main, __VLS_intrinsics.main)({
     ...{ class: "page-content" },
 });
 /** @type {__VLS_StyleScopedClasses['page-content']} */ ;
-let __VLS_24;
+let __VLS_30;
 /** @ts-ignore @type { | typeof __VLS_components.RouterView | typeof __VLS_components.RouterView} */
 RouterView;
 // @ts-ignore
-const __VLS_25 = __VLS_asFunctionalComponent1(__VLS_24, new __VLS_24({}));
-const __VLS_26 = __VLS_25({}, ...__VLS_functionalComponentArgsRest(__VLS_25));
+const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({}));
+const __VLS_32 = __VLS_31({}, ...__VLS_functionalComponentArgsRest(__VLS_31));
 {
-    const { default: __VLS_29 } = __VLS_27.slots;
-    const [{ Component, route }] = __VLS_vSlot(__VLS_29);
-    let __VLS_30;
+    const { default: __VLS_35 } = __VLS_33.slots;
+    const [{ Component, route }] = __VLS_vSlot(__VLS_35);
+    let __VLS_36;
     /** @ts-ignore @type { | typeof __VLS_components.KeepAlive | typeof __VLS_components.KeepAlive} */
     KeepAlive;
     // @ts-ignore
-    const __VLS_31 = __VLS_asFunctionalComponent1(__VLS_30, new __VLS_30({}));
-    const __VLS_32 = __VLS_31({}, ...__VLS_functionalComponentArgsRest(__VLS_31));
-    const { default: __VLS_35 } = __VLS_33.slots;
+    const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({
+        max: (12),
+    }));
+    const __VLS_38 = __VLS_37({
+        max: (12),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_37));
+    const { default: __VLS_41 } = __VLS_39.slots;
     if (route.meta.keepAlive) {
-        const __VLS_36 = (Component);
+        const __VLS_42 = (Component);
         // @ts-ignore
-        const __VLS_37 = __VLS_asFunctionalComponent1(__VLS_36, new __VLS_36({}));
-        const __VLS_38 = __VLS_37({}, ...__VLS_functionalComponentArgsRest(__VLS_37));
+        const __VLS_43 = __VLS_asFunctionalComponent1(__VLS_42, new __VLS_42({
+            key: (route.name === 'dashboard-tools' ? String(route.name) : route.fullPath),
+        }));
+        const __VLS_44 = __VLS_43({
+            key: (route.name === 'dashboard-tools' ? String(route.name) : route.fullPath),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_43));
     }
     // @ts-ignore
     [];
-    var __VLS_33;
+    var __VLS_39;
     if (!route.meta.keepAlive) {
-        const __VLS_41 = (Component);
+        const __VLS_47 = (Component);
         // @ts-ignore
-        const __VLS_42 = __VLS_asFunctionalComponent1(__VLS_41, new __VLS_41({}));
-        const __VLS_43 = __VLS_42({}, ...__VLS_functionalComponentArgsRest(__VLS_42));
+        const __VLS_48 = __VLS_asFunctionalComponent1(__VLS_47, new __VLS_47({
+            key: (route.fullPath),
+        }));
+        const __VLS_49 = __VLS_48({
+            key: (route.fullPath),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_48));
     }
     // @ts-ignore
     [];
-    __VLS_27.slots['' /* empty slot name completion */];
+    __VLS_33.slots['' /* empty slot name completion */];
 }
-var __VLS_27;
+var __VLS_33;
 // @ts-ignore
 [];
 const __VLS_export = (await import('vue')).defineComponent({});
