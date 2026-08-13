@@ -137,6 +137,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	if err != nil {
 		return model.MessageSearchResponse{}, fmt.Errorf("读取 Topic 结束位置失败：%s", FriendlyKafkaError(err))
 	}
+	estimatedMessages := estimatedTopicMessages(topic, startOffsets, endOffsets)
 	fromOffsets := startOffsets
 	if !fromTime.IsZero() {
 		fromOffsets, err = admin.ListOffsetsAfterMilli(ctx, fromTime.UnixMilli(), topic)
@@ -154,7 +155,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 
 	partitionCount := len(endOffsets[topic])
 	if partitionCount == 0 {
-		return emptyMessageSearchResponse(), nil
+		return emptyMessageSearchResponse(estimatedMessages), nil
 	}
 	perPartitionWindow := int64(req.Limit)
 	if strings.TrimSpace(req.Keyword) != "" {
@@ -185,7 +186,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 		endBounds[partition] = endAt
 	}
 	if len(assignments[topic]) == 0 {
-		return emptyMessageSearchResponse(), nil
+		return emptyMessageSearchResponse(estimatedMessages), nil
 	}
 	client.AddConsumePartitions(assignments)
 
@@ -197,7 +198,27 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	if len(items) > req.Limit {
 		items = items[:req.Limit]
 	}
-	return model.MessageSearchResponse{Topic: topic, Items: items, Total: len(items), Scanned: scanned, Truncated: truncated}, nil
+	return model.MessageSearchResponse{
+		Topic: topic, Items: items, Total: len(items), Scanned: scanned, Truncated: truncated,
+		EstimatedMessages: estimatedMessages,
+	}, nil
+}
+
+func estimatedTopicMessages(topic string, startOffsets, endOffsets kadm.ListedOffsets) *int64 {
+	starts := startOffsets[topic]
+	ends := endOffsets[topic]
+	if len(starts) == 0 || len(starts) != len(ends) {
+		return nil
+	}
+	var total int64
+	for partition, start := range starts {
+		end, ok := ends[partition]
+		if !ok || start.Err != nil || end.Err != nil || start.Offset < 0 || end.Offset < start.Offset {
+			return nil
+		}
+		total += end.Offset - start.Offset
+	}
+	return &total
 }
 
 func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSearchRequest, endBounds map[int32]int64) ([]model.MessageItem, int, bool, error) {
@@ -246,6 +267,9 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
 }
 
-func emptyMessageSearchResponse() model.MessageSearchResponse {
-	return model.MessageSearchResponse{Items: []model.MessageItem{}, Total: 0, Scanned: 0, Truncated: false}
+func emptyMessageSearchResponse(estimatedMessages *int64) model.MessageSearchResponse {
+	return model.MessageSearchResponse{
+		Items: []model.MessageItem{}, Total: 0, Scanned: 0, Truncated: false,
+		EstimatedMessages: estimatedMessages,
+	}
 }

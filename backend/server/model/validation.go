@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
@@ -14,6 +15,17 @@ func ValidateConnection(req ConnectionRequest) error {
 	for _, broker := range req.Brokers {
 		if !strings.Contains(broker, ":") {
 			return fmt.Errorf("Broker 地址需要包含端口：%s", broker)
+		}
+	}
+	if req.SSHEnabled {
+		if _, _, err := net.SplitHostPort(req.SSHAddress); err != nil {
+			return errors.New("SSH 跳板机地址格式不正确，请填写 host:port")
+		}
+		if strings.TrimSpace(req.SSHUsername) == "" {
+			return errors.New("使用 SSH 跳板机时必须填写用户名")
+		}
+		if req.SSHPassword == "" {
+			return errors.New("使用 SSH 跳板机时必须填写密码")
 		}
 	}
 	return nil

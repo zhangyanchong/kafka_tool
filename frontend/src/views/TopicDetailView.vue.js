@@ -18,6 +18,7 @@ const loading = ref(false);
 const loadError = ref("");
 const scanned = ref(0);
 const truncated = ref(false);
+const estimatedMessages = ref(null);
 const expanded = ref(new Set());
 const page = ref(1);
 const pageSize = 10;
@@ -126,6 +127,11 @@ function healthMetric(value) {
         return value.toLocaleString();
     return healthLoading.value ? "读取中" : "不可用";
 }
+function estimatedMessageMetric() {
+    if (estimatedMessages.value != null)
+        return estimatedMessages.value.toLocaleString("zh-CN");
+    return loading.value ? "读取中" : "不可用";
+}
 function brokerList(values) {
     return values.length ? values.join(", ") : "无";
 }
@@ -205,6 +211,7 @@ async function search() {
         page.value = 1;
         scanned.value = response.scanned;
         truncated.value = response.truncated;
+        estimatedMessages.value = response.estimatedMessages ?? null;
     }
     catch (reason) {
         messages.value = [];
@@ -312,6 +319,11 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+(__VLS_ctx.estimatedMessageMetric());
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 (__VLS_ctx.healthMetric(__VLS_ctx.topicHealth?.partitions));
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
@@ -382,7 +394,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
             // @ts-ignore
-            [topic, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+            [topic, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
         } },
     type: "button",
     'aria-expanded': (!__VLS_ctx.healthCollapsed),

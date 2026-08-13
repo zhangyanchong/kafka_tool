@@ -26,3 +26,21 @@ func TestNormalizeMetricSnapshotStillRequiresTopic(t *testing.T) {
 		t.Fatal("missing topic was accepted")
 	}
 }
+
+func TestValidateConnectionRequiresSSHSettingsWhenEnabled(t *testing.T) {
+	req := ConnectionRequest{
+		Brokers:    []string{"kafka.internal:9092"},
+		SSHEnabled: true,
+		SSHAddress: "jump.example.com:22",
+	}
+
+	if err := ValidateConnection(req); err == nil {
+		t.Fatal("incomplete SSH settings were accepted")
+	}
+
+	req.SSHUsername = "deploy"
+	req.SSHPassword = "secret"
+	if err := ValidateConnection(req); err != nil {
+		t.Fatalf("valid SSH settings were rejected: %v", err)
+	}
+}

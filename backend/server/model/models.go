@@ -10,6 +10,10 @@ type ConnectionRequest struct {
 	Password           string   `json:"password"`
 	TLSSkipVerify      bool     `json:"tlsSkipVerify"`
 	ConnectionTimeoutS int      `json:"connectionTimeoutSeconds"`
+	SSHEnabled         bool     `json:"sshEnabled"`
+	SSHAddress         string   `json:"sshAddress"`
+	SSHUsername        string   `json:"sshUsername"`
+	SSHPassword        string   `json:"sshPassword"`
 }
 
 type APIResponse struct {
@@ -83,11 +87,12 @@ type MessageItem struct {
 }
 
 type MessageSearchResponse struct {
-	Topic     string        `json:"topic,omitempty"`
-	Items     []MessageItem `json:"items"`
-	Total     int           `json:"total"`
-	Scanned   int           `json:"scanned"`
-	Truncated bool          `json:"truncated"`
+	Topic             string        `json:"topic,omitempty"`
+	Items             []MessageItem `json:"items"`
+	Total             int           `json:"total"`
+	Scanned           int           `json:"scanned"`
+	Truncated         bool          `json:"truncated"`
+	EstimatedMessages *int64        `json:"estimatedMessages,omitempty"`
 }
 
 type ConsumerItem struct {

@@ -332,7 +332,7 @@ input:focus, textarea:focus, select:focus { border-color: #ec633f; box-shadow: 0
 .offset-status.normal { color: #3da56d; background: rgba(55,191,119,.09); }
 .offset-status.uncommitted { color: #78818e; background: rgba(105,113,126,.1); }
 .offset-status.anomaly { color: #f16f4c; background: rgba(242,96,57,.1); }
-.topic-health-summary { grid-template-columns: repeat(4, 1fr); }
+.topic-health-summary { grid-template-columns: repeat(5, 1fr); }
 .topic-health-summary article.warning { border-color: rgba(242,96,57,.38); background: linear-gradient(145deg, rgba(242,96,57,.08), #11141a); }
 .topic-health-summary article.warning strong { color: #ff7652; }
 .topic-health-card { min-height: 0; margin-bottom: 18px; }

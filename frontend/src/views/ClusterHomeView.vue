@@ -12,7 +12,7 @@ onBeforeUnmount(() => renderTheme(currentTheme.value));
 
 function enterCluster(id: string) {
   if (!store.activate(id)) return;
-  if (store.usesSasl && !store.form.password) {
+  if ((store.usesSasl && !store.form.password) || (store.form.sshEnabled && !store.form.sshPassword)) {
     router.push({ path: "/connect", query: { id } });
     return;
   }

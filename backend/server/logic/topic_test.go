@@ -51,6 +51,36 @@ func TestTopicItemFromMetadataCountsEachProblemPartitionOnce(t *testing.T) {
 	}
 }
 
+func TestEstimatedTopicMessagesSumsPartitionOffsetRanges(t *testing.T) {
+	startOffsets := kadm.ListedOffsets{"orders": {
+		0: {Topic: "orders", Partition: 0, Offset: 10},
+		1: {Topic: "orders", Partition: 1, Offset: 5},
+	}}
+	endOffsets := kadm.ListedOffsets{"orders": {
+		0: {Topic: "orders", Partition: 0, Offset: 40},
+		1: {Topic: "orders", Partition: 1, Offset: 35},
+	}}
+
+	estimated := estimatedTopicMessages("orders", startOffsets, endOffsets)
+	if estimated == nil || *estimated != 60 {
+		t.Fatalf("estimated messages = %v, want 60", estimated)
+	}
+}
+
+func TestEstimatedTopicMessagesIsUnavailableForPartialOffsets(t *testing.T) {
+	startOffsets := kadm.ListedOffsets{"orders": {
+		0: {Topic: "orders", Partition: 0, Offset: 10},
+	}}
+	endOffsets := kadm.ListedOffsets{"orders": {
+		0: {Topic: "orders", Partition: 0, Offset: 40},
+		1: {Topic: "orders", Partition: 1, Offset: 35},
+	}}
+
+	if estimated := estimatedTopicMessages("orders", startOffsets, endOffsets); estimated != nil {
+		t.Fatalf("estimated messages = %d, want unavailable", *estimated)
+	}
+}
+
 func TestTopicPartitionHealthItemReportsHealthyPartition(t *testing.T) {
 	item := topicPartitionHealthItem(kadm.PartitionDetail{
 		Partition: 3,

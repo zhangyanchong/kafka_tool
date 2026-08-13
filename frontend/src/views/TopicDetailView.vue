@@ -38,6 +38,7 @@ const loading = ref(false);
 const loadError = ref("");
 const scanned = ref(0);
 const truncated = ref(false);
+const estimatedMessages = ref<number | null>(null);
 const expanded = ref<Set<string>>(new Set());
 const page = ref(1);
 const pageSize = 10;
@@ -152,6 +153,11 @@ function healthMetric(value?: number) {
   return healthLoading.value ? "读取中" : "不可用";
 }
 
+function estimatedMessageMetric() {
+  if (estimatedMessages.value != null) return estimatedMessages.value.toLocaleString("zh-CN");
+  return loading.value ? "读取中" : "不可用";
+}
+
 function brokerList(values: number[]) {
   return values.length ? values.join(", ") : "无";
 }
@@ -229,6 +235,7 @@ async function search() {
     page.value = 1;
     scanned.value = response.scanned;
     truncated.value = response.truncated;
+    estimatedMessages.value = response.estimatedMessages ?? null;
   } catch (reason) {
     messages.value = [];
     loadError.value = reason instanceof Error ? reason.message : "消息读取失败";
@@ -303,6 +310,7 @@ onMounted(() => {
     </div>
 
     <div class="summary-grid topic-health-summary">
+      <article><span>消息量（估算）</span><strong>{{ estimatedMessageMetric() }}</strong><small>分区起止 Offset 差值</small></article>
       <article><span>分区总数</span><strong>{{ healthMetric(topicHealth?.partitions) }}</strong><small>Metadata 中的 Partition</small></article>
       <article><span>正常分区</span><strong>{{ healthMetric(topicHealth?.healthyPartitions) }}</strong><small>Leader 与副本同步正常</small></article>
       <article :class="{ warning: (topicHealth?.problemPartitions || 0) > 0 }"><span>异常分区</span><strong>{{ healthMetric(topicHealth?.problemPartitions) }}</strong><small>至少存在一项异常</small></article>

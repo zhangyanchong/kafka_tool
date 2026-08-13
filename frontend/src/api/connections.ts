@@ -13,6 +13,10 @@ export interface ConnectionPayload {
   password: string;
   tlsSkipVerify: boolean;
   connectionTimeoutSeconds: number;
+  sshEnabled: boolean;
+  sshAddress: string;
+  sshUsername: string;
+  sshPassword: string;
 }
 
 export interface ConnectionResult {
@@ -189,6 +193,7 @@ export function searchTopicMessages(
     total: number;
     scanned: number;
     truncated: boolean;
+    estimatedMessages?: number;
   }>(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
     ...payload,
     ...search,

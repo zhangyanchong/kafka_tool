@@ -23,20 +23,29 @@ const defaults: ConnectionPayload = {
   password: "",
   tlsSkipVerify: false,
   connectionTimeoutSeconds: 10,
+  sshEnabled: false,
+  sshAddress: "",
+  sshUsername: "",
+  sshPassword: "",
 };
 
 function createId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function withoutPassword(payload: ConnectionPayload): ConnectionPayload {
-  return { ...payload, brokers: [...payload.brokers], password: "" };
+function withoutPasswords(payload: ConnectionPayload): ConnectionPayload {
+  return { ...payload, brokers: [...payload.brokers], password: "", sshPassword: "" };
 }
 
 function loadConnections(): SavedConnection[] {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    if (Array.isArray(saved)) return saved;
+    if (Array.isArray(saved)) {
+      return saved.map((item) => ({
+        ...item,
+        config: withoutPasswords({ ...defaults, ...item.config }),
+      }));
+    }
   } catch {
     // Fall through to the legacy single-connection migration.
   }
@@ -44,7 +53,7 @@ function loadConnections(): SavedConnection[] {
   try {
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!legacy) return [];
-    const config = { ...defaults, ...JSON.parse(legacy), password: "" };
+    const config = withoutPasswords({ ...defaults, ...JSON.parse(legacy) });
     const migrated = [{ id: createId(), config, brokerCount: 0, lastConnectedAt: "" }];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
     return migrated;
@@ -55,13 +64,13 @@ function loadConnections(): SavedConnection[] {
 
 export const useConnectionStore = defineStore("connection", () => {
   const connections = ref<SavedConnection[]>(loadConnections());
-  const runtimePasswords = new Map<string, string>();
+  const runtimeSecrets = new Map<string, { password: string; sshPassword: string }>();
   const initialActiveId = localStorage.getItem(ACTIVE_KEY) || "";
   const initialConnection = connections.value.find((item) => item.id === initialActiveId);
   const activeId = ref(initialConnection?.id || "");
   const editingId = ref("");
   const form = ref<ConnectionPayload>(
-    initialConnection ? withoutPassword(initialConnection.config) : { ...defaults, brokers: [...defaults.brokers] },
+    initialConnection ? withoutPasswords(initialConnection.config) : { ...defaults, brokers: [...defaults.brokers] },
   );
   const testing = ref(false);
   const result = ref<ConnectionResult | null>(null);
@@ -91,7 +100,12 @@ export const useConnectionStore = defineStore("connection", () => {
     if (!connection) return false;
     editingId.value = "";
     activeId.value = id;
-    form.value = { ...withoutPassword(connection.config), password: runtimePasswords.get(id) || "" };
+    const secrets = runtimeSecrets.get(id);
+    form.value = {
+      ...withoutPasswords(connection.config),
+      password: secrets?.password || "",
+      sshPassword: secrets?.sshPassword || "",
+    };
     result.value = connection.lastConnectedAt
       ? { success: true, message: "已选择保存的集群", brokerCount: connection.brokerCount }
       : null;
@@ -104,7 +118,12 @@ export const useConnectionStore = defineStore("connection", () => {
     const connection = connections.value.find((item) => item.id === id);
     if (!connection) return false;
     editingId.value = id;
-    form.value = { ...withoutPassword(connection.config), password: runtimePasswords.get(id) || "" };
+    const secrets = runtimeSecrets.get(id);
+    form.value = {
+      ...withoutPasswords(connection.config),
+      password: secrets?.password || "",
+      sshPassword: secrets?.sshPassword || "",
+    };
     result.value = null;
     error.value = "";
     return true;
@@ -115,7 +134,7 @@ export const useConnectionStore = defineStore("connection", () => {
     if (index === -1) return false;
 
     connections.value.splice(index, 1);
-    runtimePasswords.delete(id);
+    runtimeSecrets.delete(id);
     if (editingId.value === id) editingId.value = "";
     if (activeId.value === id) {
       activeId.value = "";
@@ -132,11 +151,18 @@ export const useConnectionStore = defineStore("connection", () => {
     const id = editingId.value || activeId.value || createId();
     const saved: SavedConnection = {
       id,
-      config: withoutPassword(form.value),
+      config: withoutPasswords(form.value),
       brokerCount: result.value?.brokerCount || 0,
       lastConnectedAt: new Date().toISOString(),
     };
-    if (form.value.password) runtimePasswords.set(id, form.value.password);
+    if (form.value.password || form.value.sshPassword) {
+      runtimeSecrets.set(id, {
+        password: form.value.password,
+        sshPassword: form.value.sshPassword,
+      });
+    } else {
+      runtimeSecrets.delete(id);
+    }
     const index = connections.value.findIndex((item) => item.id === id);
     if (index === -1) connections.value.push(saved);
     else connections.value[index] = saved;

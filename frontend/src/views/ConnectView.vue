@@ -9,6 +9,7 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
+const showSSHPassword = ref(false);
 const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
 const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
 const brokerCount = computed(
@@ -146,6 +147,43 @@ async function submit() {
             <input v-model="store.form.tlsSkipVerify" type="checkbox" />
             <span><strong>跳过 TLS 证书验证</strong><small>仅建议在本地或测试环境使用</small></span>
           </label>
+
+          <label class="check">
+            <input v-model="store.form.sshEnabled" type="checkbox" />
+            <span><strong>使用 SSH 跳板机</strong><small>通过跳板机访问内网 Kafka Broker</small></span>
+          </label>
+
+          <template v-if="store.form.sshEnabled">
+            <label>
+              <span>跳板机地址</span>
+              <input
+                v-model.trim="store.form.sshAddress"
+                required
+                autocomplete="off"
+                placeholder="jump.example.com:22"
+              />
+            </label>
+            <div class="grid">
+              <label>
+                <span>SSH 用户名</span>
+                <input v-model.trim="store.form.sshUsername" required autocomplete="username" placeholder="SSH username" />
+              </label>
+              <label>
+                <span>SSH 密码</span>
+                <div class="password">
+                  <input
+                    v-model="store.form.sshPassword"
+                    :type="showSSHPassword ? 'text' : 'password'"
+                    required
+                    autocomplete="current-password"
+                    placeholder="••••••••"
+                  />
+                  <button type="button" @click="showSSHPassword = !showSSHPassword">{{ showSSHPassword ? "隐藏" : "显示" }}</button>
+                </div>
+              </label>
+            </div>
+            <small>SSH 主机密钥暂不校验；SSH 密码仅保留在本次运行内存中。</small>
+          </template>
 
           <div v-if="store.result" class="notice success">
             <strong>连接成功</strong>

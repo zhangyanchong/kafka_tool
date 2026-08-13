@@ -7,6 +7,7 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
+const showSSHPassword = ref(false);
 const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
 const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
 const brokerCount = computed(() => brokerText.value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean).length);
@@ -265,6 +266,64 @@ if (__VLS_ctx.store.usesTls) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 }
+__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+    ...{ class: "check" },
+});
+/** @type {__VLS_StyleScopedClasses['check']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "checkbox",
+});
+(__VLS_ctx.store.form.sshEnabled);
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+if (__VLS_ctx.store.form.sshEnabled) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        required: true,
+        autocomplete: "off",
+        placeholder: "jump.example.com:22",
+    });
+    (__VLS_ctx.store.form.sshAddress);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['grid']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        required: true,
+        autocomplete: "username",
+        placeholder: "SSH username",
+    });
+    (__VLS_ctx.store.form.sshUsername);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "password" },
+    });
+    /** @type {__VLS_StyleScopedClasses['password']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        type: (__VLS_ctx.showSSHPassword ? 'text' : 'password'),
+        required: true,
+        autocomplete: "current-password",
+        placeholder: "••••••••",
+    });
+    (__VLS_ctx.store.form.sshPassword);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.store.form.sshEnabled))
+                    throw 0;
+                return (__VLS_ctx.showSSHPassword = !__VLS_ctx.showSSHPassword);
+                // @ts-ignore
+                [store, store, store, store, store, store, store, showPassword, showSSHPassword, showSSHPassword, showSSHPassword,];
+            } },
+        type: "button",
+    });
+    (__VLS_ctx.showSSHPassword ? "隐藏" : "显示");
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+}
 if (__VLS_ctx.store.result) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "notice success" },
@@ -297,6 +356,6 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
 (__VLS_ctx.store.testing ? "···" : "→");
 // @ts-ignore
-[editing, store, store, store, store, store, store, store, store, store, store, showPassword,];
+[editing, store, store, store, store, store, store, store, store, showSSHPassword,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};
