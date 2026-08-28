@@ -1,0 +1,210 @@
+Kafka Tool 个人非商业许可证
+1.0 版，2026 年 8 月
+
+版权所有 (c) 2026 Kafka Tool Project
+保留所有权利。
+
+重要提示：本软件仅为源码可见软件，并非开源软件。
+
+下载、复制、安装、修改或使用本软件，即表示您同意接受本许可证的
+全部条款。如果您不同意这些条款，则不得使用本软件。
+
+一、定义
+
+“本软件”是指随本许可证发布的 Kafka Tool 源代码、可执行文件、文档和
+其他材料，包括其修改版本及衍生作品。
+
+“个人非商业使用”是指仅由自然人基于其私人目的进行的使用，且该使用不
+直接或间接产生任何商业、经营、职业、受雇工作或创收方面的利益。
+
+“商业使用”包括但不限于：
+
+- 由公司、合伙组织、机构、政府部门、个体经营者或其他法律主体实施，
+  或者为上述主体利益实施的使用；
+- 与受雇工作、有偿工作、咨询或向他人或其他主体提供服务有关的使用；
+- 企业或其他组织内部的业务或运营用途；
+- 将本软件集成到产品或服务中，或者使用本软件开发、测试、运行、支持
+  或提供产品或服务；
+- 托管本软件，或者向第三方提供本软件的功能；
+- 销售、许可、再许可、出租本软件或其修改版本，或者以其他方式利用其
+  获利；以及
+- 任何旨在获得直接或间接商业优势或经济报酬的使用。
+
+二、个人非商业许可授权
+
+在遵守本许可证全部条款的前提下，著作权人授予您一项有限的、非独占的、
+不可转让、不可再许可且可撤销的许可，允许您：
+
+- 下载、安装并运行本软件，但仅限个人非商业使用；以及
+- 修改本软件源代码，但仅限您本人的个人非商业使用。
+
+除此以外，不授予任何其他权利。
+
+三、限制
+
+未经著作权人事先给予书面商业授权，您不得：
+
+- 将本软件用于任何商业用途；
+- 分发、发布、销售、再许可、出租、租赁本软件或其任何修改版本，或者
+  以其他方式向他人或其他主体提供本软件或其任何修改版本；
+- 将本软件或其中任何部分整合到其他产品或服务中；
+- 删除、遮盖或更改任何著作权、许可证、署名或其他权利声明；或者
+- 声称本软件属于开源软件。
+
+四、商业授权
+
+任何商业使用均须在开始使用之前同时满足以下全部条件：
+
+1. 向著作权人发出通知，并说明拟进行的商业使用；
+2. 取得著作权人签发的书面商业授权；以及
+3. 按照双方约定支付全部适用的商业许可费用。
+
+仅发送通知或提出授权申请本身并不构成许可。只有在著作权人以书面形式
+确认商业授权，并且使用者完成所要求的付款后，商业使用权才正式生效。
+
+商业授权咨询邮箱：510466486@qq.com
+
+五、权利归属
+
+本软件仅授予许可，并非出售。著作权人保留本软件的全部著作权和其他知识
+产权。除非著作权人另行书面明确同意，修改版本和衍生作品仍受本许可证约束。
+
+六、终止
+
+如果您违反本许可证的任何条款，本许可证将立即自动终止。许可证终止后，
+您必须停止使用本软件，并删除您持有或控制的全部副本。许可证终止不影响
+著作权人就侵权或违约行为寻求任何可用的救济。
+
+七、不提供保证
+
+本软件按“原样”提供，不附带任何明示或默示保证，包括但不限于适销性、
+特定用途适用性、权利完整性及不侵权保证。使用本软件的风险由您自行承担。
+
+八、责任限制
+
+在适用法律允许的最大范围内，著作权人不对因本软件或使用本软件而产生或
+与其相关的任何索赔、损失或损害承担责任，无论该责任基于合同、侵权还是
+其他法律依据。
+
+九、权利保留
+
+著作权人保留本许可证未明确授予的全部权利。除非由著作权人以书面形式作出，
+否则对本许可证条款的任何放弃或修改均不生效。
+
+十、语言
+
+本许可证提供中文和英文版本。如两个版本存在任何不一致，以中文版本为准。
+
+-------------------------------------------------------------------------------
+
+Kafka Tool Personal Non-Commercial License
+Version 1.0, August 2026
+
+Copyright (c) 2026 Kafka Tool Project
+All rights reserved.
+
+IMPORTANT: THIS SOFTWARE IS SOURCE-AVAILABLE, NOT OPEN-SOURCE SOFTWARE.
+
+By downloading, copying, installing, modifying, or using this software, you
+agree to the terms of this License. If you do not agree, you may not use the
+Software.
+
+1. Definitions
+
+"Software" means the Kafka Tool source code, executable files, documentation,
+and other materials distributed with this License, including modified versions
+and derivative works.
+
+"Personal Non-Commercial Use" means use solely by an individual, for that
+individual's own private purposes, without direct or indirect commercial,
+business, professional, employment-related, or revenue-generating benefit.
+
+"Commercial Use" includes, without limitation:
+
+- use by or for a company, partnership, organization, government body, sole
+  proprietor, or other legal entity;
+- use in connection with employment, paid work, consulting, or services
+  provided to another person or entity;
+- internal business or operational use;
+- integration into, or use to develop, test, operate, support, or provide, a
+  product or service;
+- hosting or making the Software's functionality available to third parties;
+- selling, licensing, sublicensing, renting, or otherwise monetizing the
+  Software or any modified version; and
+- any use intended to obtain direct or indirect commercial advantage or
+  financial compensation.
+
+2. Personal Non-Commercial License Grant
+
+Subject to this License, the copyright holder grants you a limited,
+non-exclusive, non-transferable, non-sublicensable, revocable license to:
+
+- download, install, and run the Software for Personal Non-Commercial Use; and
+- modify the source code solely for your own Personal Non-Commercial Use.
+
+No other rights are granted.
+
+3. Restrictions
+
+Without prior written Commercial Authorization from the copyright holder, you
+may not:
+
+- use the Software for any Commercial Use;
+- distribute, publish, sell, sublicense, rent, lease, or otherwise make the
+  Software or any modified version available to another person or entity;
+- incorporate the Software or any part of it into another product or service;
+- remove, obscure, or alter any copyright, license, attribution, or proprietary
+  notice; or
+- represent that the Software is open-source software.
+
+4. Commercial Authorization
+
+Any Commercial Use requires all of the following before such use begins:
+
+1. notice to the copyright holder describing the intended Commercial Use;
+2. written Commercial Authorization issued by the copyright holder; and
+3. payment of all applicable commercial license fees agreed to by the parties.
+
+Sending a notice or requesting a license does not by itself grant permission.
+Commercial rights take effect only after the copyright holder has confirmed the
+Commercial Authorization in writing and the required payment has been made.
+
+Commercial licensing inquiries: 510466486@qq.com
+
+5. Ownership
+
+The Software is licensed, not sold. The copyright holder retains all copyright
+and other intellectual property rights in the Software. Modified versions and
+derivative works remain subject to this License unless the copyright holder
+expressly agrees otherwise in writing.
+
+6. Termination
+
+This License terminates automatically and immediately if you violate any of its
+terms. Upon termination, you must stop using the Software and delete all copies
+in your possession or control. Termination does not limit any remedies available
+to the copyright holder for infringement or breach.
+
+7. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. YOU USE THE SOFTWARE AT YOUR
+OWN RISK.
+
+8. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER WILL NOT
+BE LIABLE FOR ANY CLAIM, LOSS, OR DAMAGES ARISING FROM OR RELATED TO THE SOFTWARE
+OR ITS USE, WHETHER IN CONTRACT, TORT, OR OTHERWISE.
+
+9. Reservation of Rights
+
+All rights not expressly granted under this License are reserved by the
+copyright holder. No waiver or modification of these terms is effective unless
+made in writing by the copyright holder.
+
+10. Language
+
+This License is provided in Chinese and English. In case of any inconsistency
+between the two versions, the Chinese version shall prevail.
