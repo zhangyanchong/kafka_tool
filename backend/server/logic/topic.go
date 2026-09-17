@@ -2,6 +2,7 @@ package logic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"kafka-tool/backend/server/tools"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -30,9 +32,240 @@ func FindTopics(ctx context.Context, client *kgo.Client) (model.TopicListRespons
 		items = append(items, item)
 		totalPartitions += item.Partitions
 	}
+	// A group is associated with a topic when it has committed an offset for it,
+	// or when one of its current members is assigned a partition from it. The
+	// latter covers newly started groups before their first offset commit.
+	if counts, err := topicConsumerGroupCounts(ctx, client); err == nil {
+		for index := range items {
+			count := counts[items[index].Name]
+			items[index].ConsumerGroupCount = &count
+		}
+	}
 	return model.TopicListResponse{
 		Items: items, Total: len(items), TotalPartitions: totalPartitions,
 	}, nil
+}
+
+func topicConsumerGroupCounts(ctx context.Context, client *kgo.Client) (map[string]int, error) {
+	groupTopics, err := consumerGroupTopics(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, topics := range groupTopics {
+		for topic := range topics {
+			counts[topic]++
+		}
+	}
+	return counts, nil
+}
+
+func FindTopicDeletionPlan(ctx context.Context, client *kgo.Client, topic string) (model.TopicDeletionPlanResponse, error) {
+	groupTopics, err := consumerGroupTopics(ctx, client)
+	if err != nil {
+		return model.TopicDeletionPlanResponse{}, err
+	}
+	plan := model.TopicDeletionPlanResponse{
+		Topic:          topic,
+		GroupsToDelete: []model.TopicConsumerGroupPlanItem{},
+		GroupsKept:     []model.TopicConsumerGroupPlanItem{},
+	}
+	for groupID, topics := range groupTopics {
+		if _, consumesTopic := topics[topic]; !consumesTopic {
+			continue
+		}
+		item := model.TopicConsumerGroupPlanItem{GroupID: groupID, Topics: sortedTopicNames(topics)}
+		if len(topics) == 1 {
+			plan.GroupsToDelete = append(plan.GroupsToDelete, item)
+		} else {
+			plan.GroupsKept = append(plan.GroupsKept, item)
+		}
+	}
+	sort.Slice(plan.GroupsToDelete, func(i, j int) bool { return plan.GroupsToDelete[i].GroupID < plan.GroupsToDelete[j].GroupID })
+	sort.Slice(plan.GroupsKept, func(i, j int) bool { return plan.GroupsKept[i].GroupID < plan.GroupsKept[j].GroupID })
+	return plan, nil
+}
+
+func DeleteTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, topic string) (model.TopicDeletionResponse, error) {
+	plan, err := FindTopicDeletionPlan(ctx, client, topic)
+	if err != nil {
+		return model.TopicDeletionResponse{}, err
+	}
+	if _, err := kadm.NewClient(client).DeleteTopic(ctx, topic); err != nil {
+		return model.TopicDeletionResponse{}, err
+	}
+	response := model.TopicDeletionResponse{
+		Success: true, Message: "Topic 已提交删除请求",
+		DeletedGroups: []string{}, GroupsKept: plan.GroupsKept, FailedGroupDeletions: []string{},
+	}
+	for _, group := range plan.GroupsToDelete {
+		if err := DeleteConsumer(ctx, client, group.GroupID); err != nil {
+			response.FailedGroupDeletions = append(response.FailedGroupDeletions, group.GroupID)
+			continue
+		}
+		response.DeletedGroups = append(response.DeletedGroups, group.GroupID)
+	}
+	if len(response.FailedGroupDeletions) > 0 {
+		response.Message = "Topic 已提交删除请求，但部分消费组未删除"
+	}
+	return response, nil
+}
+
+func RecreateTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, topic string) (model.TopicRecreationResponse, error) {
+	partitions, replicationFactor, err := topicLayout(ctx, client, topic)
+	if err != nil {
+		return model.TopicRecreationResponse{}, err
+	}
+	deleted, err := DeleteTopicAndConsumerGroups(ctx, client, topic)
+	if err != nil {
+		return model.TopicRecreationResponse{}, err
+	}
+	if err := waitForTopicDeletion(ctx, client, topic); err != nil {
+		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 删除尚未完成，未重建：%w", err)
+	}
+	if _, err := kadm.NewClient(client).CreateTopic(ctx, partitions, replicationFactor, nil, topic); err != nil {
+		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 已删除，但重建失败：%w", err)
+	}
+	if err := waitForTopicReady(ctx, client, topic, partitions); err != nil {
+		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 已创建，但分区尚未就绪：%w", err)
+	}
+	message := "Topic 已按原分区数和副本数重建"
+	if len(deleted.FailedGroupDeletions) > 0 {
+		message += "；部分消费组未删除"
+	}
+	return model.TopicRecreationResponse{
+		Success: true, Message: message, Partitions: partitions, ReplicationFactor: replicationFactor,
+		DeletedGroups: deleted.DeletedGroups, FailedGroupDeletions: deleted.FailedGroupDeletions,
+	}, nil
+}
+
+func topicLayout(ctx context.Context, client *kgo.Client, topic string) (int32, int16, error) {
+	metadata, err := kadm.NewClient(client).Metadata(ctx, topic)
+	if err != nil {
+		return 0, 0, err
+	}
+	detail, ok := metadata.Topics[topic]
+	if !ok || detail.Err != nil {
+		return 0, 0, fmt.Errorf("读取 Topic 配置失败")
+	}
+	if detail.IsInternal {
+		return 0, 0, fmt.Errorf("Kafka 内部 Topic 不允许重建")
+	}
+	partitions := int32(len(detail.Partitions))
+	replicationFactor := int16(detail.Partitions.NumReplicas())
+	if partitions == 0 || replicationFactor == 0 {
+		return 0, 0, fmt.Errorf("Topic 分区或副本数无效")
+	}
+	return partitions, replicationFactor, nil
+}
+
+func waitForTopicDeletion(ctx context.Context, client *kgo.Client, topic string) error {
+	admin := kadm.NewClient(client)
+	for {
+		metadata, err := admin.Metadata(ctx, topic)
+		if err != nil {
+			return err
+		}
+		detail, exists := metadata.Topics[topic]
+		if !exists || errors.Is(detail.Err, kerr.UnknownTopicOrPartition) {
+			return nil
+		}
+		if detail.Err != nil {
+			return detail.Err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func waitForTopicReady(ctx context.Context, client *kgo.Client, topic string, expectedPartitions int32) error {
+	admin := kadm.NewClient(client)
+	for {
+		metadata, err := admin.Metadata(ctx, topic)
+		if err != nil {
+			return err
+		}
+		detail, exists := metadata.Topics[topic]
+		ready := exists && detail.Err == nil && int32(len(detail.Partitions)) == expectedPartitions
+		if ready {
+			for _, partition := range detail.Partitions {
+				if partition.Leader < 0 {
+					ready = false
+					break
+				}
+			}
+		}
+		if ready {
+			return nil
+		}
+		if exists && detail.Err != nil && !errors.Is(detail.Err, kerr.UnknownTopicOrPartition) {
+			return detail.Err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func consumerGroupTopics(ctx context.Context, client *kgo.Client) (map[string]map[string]struct{}, error) {
+	admin := kadm.NewClient(client)
+	listed, err := admin.ListGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupIDs := listed.Groups()
+	result := make(map[string]map[string]struct{})
+	add := func(groupID, topic string) {
+		if result[groupID] == nil {
+			result[groupID] = make(map[string]struct{})
+		}
+		result[groupID][topic] = struct{}{}
+	}
+	if len(groupIDs) == 0 {
+		return result, nil
+	}
+
+	// FetchManyOffsets batches requests by coordinator, avoiding one request per
+	// group when the topic table is opened.
+	fetched := admin.FetchManyOffsets(ctx, groupIDs...)
+	if err := fetched.Error(); err != nil {
+		return nil, err
+	}
+	for groupID, response := range fetched {
+		for topic, partitions := range response.Fetched {
+			if len(partitions) > 0 {
+				add(groupID, topic)
+			}
+		}
+	}
+
+	described, err := admin.DescribeGroups(ctx, groupIDs...)
+	if err != nil {
+		return nil, err
+	}
+	for groupID, group := range described {
+		if group.Err != nil {
+			continue
+		}
+		group.AssignedPartitions().Each(func(topic string, _ int32) {
+			add(groupID, topic)
+		})
+	}
+	return result, nil
+}
+
+func sortedTopicNames(topics map[string]struct{}) []string {
+	result := make([]string, 0, len(topics))
+	for topic := range topics {
+		result = append(result, topic)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func topicItemFromMetadata(topic kmsg.MetadataResponseTopic) model.TopicItem {
@@ -96,6 +329,59 @@ func FindTopicHealth(ctx context.Context, client *kgo.Client, topic string) (mod
 		}
 	}
 	return response, nil
+}
+
+func ProduceTopicMessage(ctx context.Context, client *kgo.Client, topic string, key string, value string) (model.ProducedMessageResponse, error) {
+	record, err := client.ProduceSync(ctx, &kgo.Record{
+		Topic: topic, Key: []byte(key), Value: []byte(value),
+	}).First()
+	if err != nil {
+		return model.ProducedMessageResponse{}, err
+	}
+	return model.ProducedMessageResponse{
+		Partition: record.Partition,
+		Offset:    record.Offset,
+		Timestamp: record.Timestamp.Format(time.RFC3339Nano),
+	}, nil
+}
+
+func CreateTopic(ctx context.Context, client *kgo.Client, topic string, partitions int32, replicationFactor int16) (model.CreateTopicResponse, error) {
+	if err := validateNewTopicName(topic); err != nil {
+		return model.CreateTopicResponse{}, err
+	}
+	requestedReplicationFactor := replicationFactor
+	if requestedReplicationFactor == 0 {
+		requestedReplicationFactor = -1 // Kafka 2.4+ uses the broker default when this is -1.
+	}
+	if _, err := kadm.NewClient(client).CreateTopic(ctx, partitions, requestedReplicationFactor, nil, topic); err != nil {
+		return model.CreateTopicResponse{}, err
+	}
+	if err := waitForTopicReady(ctx, client, topic, partitions); err != nil {
+		return model.CreateTopicResponse{}, fmt.Errorf("Topic 已创建，但分区尚未就绪：%w", err)
+	}
+	_, actualReplicationFactor, err := topicLayout(ctx, client, topic)
+	if err != nil {
+		return model.CreateTopicResponse{}, fmt.Errorf("Topic 已创建，但无法读取副本数：%w", err)
+	}
+	return model.CreateTopicResponse{
+		Success: true, Message: "Topic 已创建", Partitions: partitions, ReplicationFactor: actualReplicationFactor,
+	}, nil
+}
+
+func validateNewTopicName(topic string) error {
+	if topic == "" || len(topic) > 249 {
+		return fmt.Errorf("Topic 名称长度必须在 1 到 249 个字符之间")
+	}
+	if topic == "." || topic == ".." {
+		return fmt.Errorf("Topic 名称不能为 . 或 ..")
+	}
+	for _, character := range topic {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') && character != '.' && character != '_' && character != '-' {
+			return fmt.Errorf("Topic 名称只能包含字母、数字、点、下划线和连字符")
+		}
+	}
+	return nil
 }
 
 func topicPartitionHealthItem(partition kadm.PartitionDetail) model.TopicPartitionHealthItem {

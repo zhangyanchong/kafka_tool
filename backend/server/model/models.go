@@ -33,6 +33,31 @@ type MessageSearchRequest struct {
 	ScanLimit int    `json:"scanLimit"`
 }
 
+type ProduceMessageRequest struct {
+	ConnectionRequest
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type CreateTopicRequest struct {
+	ConnectionRequest
+	Partitions        int32 `json:"partitions"`
+	ReplicationFactor int16 `json:"replicationFactor"`
+}
+
+type CreateTopicResponse struct {
+	Success           bool   `json:"success"`
+	Message           string `json:"message"`
+	Partitions        int32  `json:"partitions"`
+	ReplicationFactor int16  `json:"replicationFactor"`
+}
+
+type ProducedMessageResponse struct {
+	Partition int32  `json:"partition"`
+	Offset    int64  `json:"offset"`
+	Timestamp string `json:"timestamp"`
+}
+
 type MetricSnapshotRequest struct {
 	ConnectionRequest
 	Topic   string `json:"topic"`
@@ -40,17 +65,46 @@ type MetricSnapshotRequest struct {
 }
 
 type TopicItem struct {
-	Name              string `json:"name"`
-	Partitions        int    `json:"partitions"`
-	Internal          bool   `json:"internal"`
-	Healthy           bool   `json:"healthy"`
-	ProblemPartitions int    `json:"problemPartitions"`
+	Name               string `json:"name"`
+	Partitions         int    `json:"partitions"`
+	ConsumerGroupCount *int   `json:"consumerGroupCount,omitempty"`
+	Internal           bool   `json:"internal"`
+	Healthy            bool   `json:"healthy"`
+	ProblemPartitions  int    `json:"problemPartitions"`
 }
 
 type TopicListResponse struct {
 	Items           []TopicItem `json:"items"`
 	Total           int         `json:"total"`
 	TotalPartitions int         `json:"totalPartitions"`
+}
+
+type TopicConsumerGroupPlanItem struct {
+	GroupID string   `json:"groupId"`
+	Topics  []string `json:"topics"`
+}
+
+type TopicDeletionPlanResponse struct {
+	Topic          string                       `json:"topic"`
+	GroupsToDelete []TopicConsumerGroupPlanItem `json:"groupsToDelete"`
+	GroupsKept     []TopicConsumerGroupPlanItem `json:"groupsKept"`
+}
+
+type TopicDeletionResponse struct {
+	Success              bool                         `json:"success"`
+	Message              string                       `json:"message"`
+	DeletedGroups        []string                     `json:"deletedGroups"`
+	GroupsKept           []TopicConsumerGroupPlanItem `json:"groupsKept"`
+	FailedGroupDeletions []string                     `json:"failedGroupDeletions,omitempty"`
+}
+
+type TopicRecreationResponse struct {
+	Success              bool     `json:"success"`
+	Message              string   `json:"message"`
+	Partitions           int32    `json:"partitions"`
+	ReplicationFactor    int16    `json:"replicationFactor"`
+	DeletedGroups        []string `json:"deletedGroups"`
+	FailedGroupDeletions []string `json:"failedGroupDeletions,omitempty"`
 }
 
 type TopicPartitionHealthItem struct {

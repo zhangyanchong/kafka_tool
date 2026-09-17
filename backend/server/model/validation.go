@@ -61,6 +61,29 @@ func NormalizeMessageSearch(req *MessageSearchRequest) (time.Time, time.Time, er
 	return fromTime, toTime, nil
 }
 
+func NormalizeProduceMessage(req *ProduceMessageRequest) error {
+	if err := ValidateConnection(req.ConnectionRequest); err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.Value) == "" {
+		return errors.New("消息内容不能为空")
+	}
+	return nil
+}
+
+func NormalizeCreateTopic(req *CreateTopicRequest) error {
+	if err := ValidateConnection(req.ConnectionRequest); err != nil {
+		return err
+	}
+	if req.Partitions < 1 || req.Partitions > 100000 {
+		return errors.New("分区数必须在 1 到 100,000 之间")
+	}
+	if req.ReplicationFactor < 0 || req.ReplicationFactor > 32767 {
+		return errors.New("副本数必须在 1 到 32,767 之间，或留空使用集群默认值")
+	}
+	return nil
+}
+
 func NormalizeMetricSnapshot(req *MetricSnapshotRequest) error {
 	if err := ValidateConnection(req.ConnectionRequest); err != nil {
 		return err

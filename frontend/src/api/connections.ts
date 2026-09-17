@@ -71,9 +71,45 @@ async function postKafka<T>(path: string, payload: unknown): Promise<T> {
 export interface KafkaTopic {
   name: string;
   partitions: number;
+  consumerGroupCount?: number;
   internal: boolean;
   healthy: boolean;
   problemPartitions: number;
+}
+
+export interface TopicConsumerGroupPlanItem {
+  groupId: string;
+  topics: string[];
+}
+
+export interface TopicDeletionPlan {
+  topic: string;
+  groupsToDelete: TopicConsumerGroupPlanItem[];
+  groupsKept: TopicConsumerGroupPlanItem[];
+}
+
+export interface TopicDeletionResult {
+  success: boolean;
+  message: string;
+  deletedGroups: string[];
+  groupsKept: TopicConsumerGroupPlanItem[];
+  failedGroupDeletions?: string[];
+}
+
+export interface TopicRecreationResult {
+  success: boolean;
+  message: string;
+  partitions: number;
+  replicationFactor: number;
+  deletedGroups: string[];
+  failedGroupDeletions?: string[];
+}
+
+export interface CreatedTopicResult {
+  success: boolean;
+  message: string;
+  partitions: number;
+  replicationFactor: number;
 }
 
 export type TopicHealthIssue =
@@ -148,6 +184,12 @@ export interface KafkaMessage {
   size: number;
 }
 
+export interface ProducedMessage {
+  partition: number;
+  offset: number;
+  timestamp: string;
+}
+
 export interface MessageSearch {
   fromTime: string;
   toTime: string;
@@ -182,6 +224,39 @@ export function fetchTopicHealth(topic: string, payload: ConnectionPayload) {
   );
 }
 
+export function fetchTopicDeletionPlan(topic: string, payload: ConnectionPayload) {
+  return postKafka<TopicDeletionPlan>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/deletion-plan`,
+    payload,
+  );
+}
+
+export function deleteTopic(topic: string, payload: ConnectionPayload) {
+  return postKafka<TopicDeletionResult>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/delete`,
+    payload,
+  );
+}
+
+export function recreateTopic(topic: string, payload: ConnectionPayload) {
+  return postKafka<TopicRecreationResult>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/recreate`,
+    payload,
+  );
+}
+
+export function createTopic(
+  topic: string,
+  payload: ConnectionPayload,
+  partitions: number,
+  replicationFactor?: number,
+) {
+  return postKafka<CreatedTopicResult>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/create`,
+    { ...payload, partitions, replicationFactor },
+  );
+}
+
 export function searchTopicMessages(
   topic: string,
   payload: ConnectionPayload,
@@ -200,6 +275,18 @@ export function searchTopicMessages(
   });
 }
 
+export function produceTopicMessage(
+  topic: string,
+  payload: ConnectionPayload,
+  key: string,
+  value: string,
+) {
+  return postKafka<ProducedMessage>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/messages/produce`,
+    { ...payload, key, value },
+  );
+}
+
 export function listConsumers(payload: ConnectionPayload) {
   return postKafka<{ items: KafkaConsumer[]; total: number }>("/api/v1/consumers/list", payload);
 }
@@ -216,6 +303,13 @@ export function listConsumerPartitions(groupId: string, payload: ConnectionPaylo
     total: number;
     totalLag: number;
   }>(`/api/v1/consumers/${encodeURIComponent(groupId)}/partitions`, payload);
+}
+
+export function deleteConsumer(groupId: string, payload: ConnectionPayload) {
+  return postKafka<{ success: boolean; message: string }>(
+    `/api/v1/consumers/${encodeURIComponent(groupId)}/delete`,
+    payload,
+  );
 }
 
 export function fetchMetricSnapshot(

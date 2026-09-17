@@ -8,28 +8,23 @@ import (
 	"testing"
 )
 
-// TestKafkaAccessRemainsReadOnly prevents accidental Kafka mutation features
-// from being added to this application. The UI is intentionally a viewer.
-func TestKafkaAccessRemainsReadOnly(t *testing.T) {
+// TestKafkaAccessStaysWithinAllowedOperations keeps the app limited to the
+// explicitly supported delete, recreation, and single-message produce actions;
+// offset mutation and configuration mutation remain disallowed.
+func TestKafkaAccessStaysWithinAllowedOperations(t *testing.T) {
 	forbidden := []string{
 		"kgo.ConsumerGroup(",
-		".Produce(",
-		".ProduceSync(",
 		".CommitOffsets(",
 		".CommitRecords(",
 		".CommitUncommittedOffsets(",
 		".MarkCommitRecords(",
 		".SetOffsets(",
-		".CreateTopics(",
-		".DeleteTopics(",
 		".CreatePartitions(",
-		".DeleteGroups(",
 		".AlterConfigs(",
 		".IncrementalAlterConfigs(",
 		".DeleteRecords(",
 		"OffsetCommitRequest",
 		"CreateTopicsRequest",
-		"DeleteTopicsRequest",
 	}
 
 	backendRoot := filepath.Clean(filepath.Join("..", ".."))
@@ -56,4 +51,3 @@ func TestKafkaAccessRemainsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-

@@ -56,15 +56,9 @@ chmod +x scripts/build-apps.sh
 应用未使用开发者证书或商店签名，只适合本地使用；首次打开时，系统可能显示安全确认。
 Mac 用户双击打开 DMG 后，把 `KafkaTool.app` 拖到 `Applications` 文件夹即可。
 
-## Kafka 只读原则
+## Kafka 操作范围
 
-本工具只用于查询、展示和搜索，禁止加入以下能力：
+本工具支持查询、展示、搜索、创建 Topic、向指定 Topic 添加单条消息，以及显式确认后的 Topic 删除、按原分区和副本数重建、Consumer Group 删除。
+删除 Topic 时，会一并删除只消费该 Topic 的消费组；同时消费其他 Topic 的组会保留并在确认前提示。
 
-- 创建或删除 Topic
-- 生产消息
-- 提交或重置 Consumer Offset
-- 创建或删除 Consumer Group
-- 修改 Topic、Broker、ACL 或分区配置
-
-`backend/cmd/server/readonly_test.go` 会扫描后端源码；如果引入上述 Kafka
-修改调用，`go test ./...` 将直接失败。
+工具不支持提交或重置 Consumer Offset、创建 Consumer Group，也不支持修改 Topic、Broker、ACL 或分区配置。

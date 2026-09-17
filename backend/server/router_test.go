@@ -34,3 +34,31 @@ func TestTopicsRouteKeepsConnectionValidationContract(t *testing.T) {
 		t.Fatalf("body = %q, want %q", got, want)
 	}
 }
+
+func TestDeleteConsumerRouteAcceptsOneNamedGroup(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/consumers/group-a/delete", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	NewHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got, want := response.Body.String(), "{\"success\":false,\"message\":\"请至少填写一个 Broker 地址\"}\n"; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+}
+
+func TestDeleteTopicRouteKeepsConnectionValidationContract(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/topics/orders/delete", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	NewHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got, want := response.Body.String(), "{\"success\":false,\"message\":\"请至少填写一个 Broker 地址\"}\n"; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+}

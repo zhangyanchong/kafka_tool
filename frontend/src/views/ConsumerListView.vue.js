@@ -1,7 +1,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
-import { listConsumers } from "@/api/connections";
+import { deleteConsumer, listConsumers } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 const keyword = ref("");
 const statusFilter = ref("all");
@@ -10,6 +10,7 @@ const pageSize = 10;
 const consumers = ref([]);
 const loading = ref(false);
 const loadError = ref("");
+const deletingGroupId = ref("");
 const connection = useConnectionStore();
 const router = useRouter();
 function normalizedState(consumer) {
@@ -85,6 +86,23 @@ async function loadConsumers() {
 onMounted(loadConsumers);
 function openConsumer(groupId) {
     router.push({ name: "consumer-detail", params: { groupId } });
+}
+async function removeConsumer(groupId) {
+    const confirmed = window.confirm(`确定删除消费组“${groupId}”吗？这会删除该组的消费进度，且无法恢复。其他消费组不会受到影响。`);
+    if (!confirmed)
+        return;
+    deletingGroupId.value = groupId;
+    loadError.value = "";
+    try {
+        await deleteConsumer(groupId, connection.form);
+        consumers.value = consumers.value.filter((consumer) => consumer.groupId !== groupId);
+    }
+    catch (reason) {
+        loadError.value = reason instanceof Error ? reason.message : "Consumer Group 删除失败";
+    }
+    finally {
+        deletingGroupId.value = "";
+    }
 }
 const __VLS_ctx = {
     ...{},
@@ -200,6 +218,10 @@ if (__VLS_ctx.filteredConsumers.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({
+        ...{ class: "consumer-actions-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['consumer-actions-heading']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.tbody, __VLS_intrinsics.tbody)({});
     for (const [consumer] of __VLS_vFor((__VLS_ctx.paginatedConsumers))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({
@@ -241,11 +263,38 @@ if (__VLS_ctx.filteredConsumers.length) {
         (consumer.protocolType || "未报告");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         (consumer.groupType || "未报告");
+        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({
+            ...{ class: "consumer-actions-cell" },
+        });
+        /** @type {__VLS_StyleScopedClasses['consumer-actions-cell']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.filteredConsumers.length))
+                        throw 0;
+                    return (__VLS_ctx.removeConsumer(consumer.groupId));
+                    // @ts-ignore
+                    [isIdleConsumer, removeConsumer,];
+                } },
+            ...{ class: "consumer-delete-button" },
+            type: "button",
+            disabled: (Boolean(__VLS_ctx.deletingGroupId)),
+            'aria-label': (`删除消费组 ${consumer.groupId}`),
+            title: "删除该消费组",
+        });
+        /** @type {__VLS_StyleScopedClasses['consumer-delete-button']} */ ;
+        (__VLS_ctx.deletingGroupId === consumer.groupId ? "处理中…" : "删除");
         // @ts-ignore
-        [isIdleConsumer,];
+        [deletingGroupId, deletingGroupId,];
     }
 }
-else {
+if (__VLS_ctx.loadError && __VLS_ctx.filteredConsumers.length) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "consumer-action-error" },
+    });
+    /** @type {__VLS_StyleScopedClasses['consumer-action-error']} */ ;
+    (__VLS_ctx.loadError);
+}
+if (!__VLS_ctx.filteredConsumers.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "empty-state" },
     });
@@ -289,6 +338,6 @@ const __VLS_2 = __VLS_1({
     total: (__VLS_ctx.filteredConsumers.length),
 }, ...__VLS_functionalComponentArgsRest(__VLS_1));
 // @ts-ignore
-[loading, loading, filteredConsumers, loadError, loadError, page, pageSize,];
+[loading, loading, filteredConsumers, filteredConsumers, filteredConsumers, loadError, loadError, loadError, loadError, page, pageSize,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

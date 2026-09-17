@@ -1,9 +1,10 @@
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { fetchTopicHealth, searchTopicMessages, } from "@/api/connections";
+import { useRoute, useRouter } from "vue-router";
+import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, searchTopicMessages, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 const route = useRoute();
+const router = useRouter();
 const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref([]);
@@ -30,6 +31,7 @@ const healthCollapsed = ref(true);
 const showAllPartitions = ref(false);
 const healthPage = ref(1);
 const healthPageSize = 10;
+const deletingTopic = ref(false);
 const paginatedMessages = computed(() => {
     const start = (page.value - 1) * pageSize;
     return messages.value.slice(start, start + pageSize);
@@ -149,6 +151,43 @@ async function loadTopicHealth() {
     }
     finally {
         healthLoading.value = false;
+    }
+}
+async function removeTopic() {
+    if (deletingTopic.value)
+        return;
+    deletingTopic.value = true;
+    loadError.value = "";
+    try {
+        const plan = await fetchTopicDeletionPlan(topic.value, connection.form);
+        const deleting = plan.groupsToDelete.length
+            ? `\n\n将同时删除仅消费此 Topic 的 ${plan.groupsToDelete.length} 个消费组：\n${plan.groupsToDelete.map((group) => `- ${group.groupId}`).join("\n")}`
+            : "\n\n没有仅消费此 Topic 的消费组需要删除。";
+        const keeping = plan.groupsKept.length
+            ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
+            : "";
+        const confirmed = window.confirm(`确定删除 Topic “${topic.value}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`);
+        if (!confirmed)
+            return;
+        const result = await deleteTopic(topic.value, connection.form);
+        if (result.failedGroupDeletions?.length) {
+            const failedGroups = result.failedGroupDeletions;
+            const retry = window.confirm(`${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`);
+            if (retry) {
+                const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
+                const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
+                window.alert(stillFailed.length
+                    ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}`
+                    : "已完成消费组的再次删除。");
+            }
+        }
+        await router.push({ name: "topics" });
+    }
+    catch (reason) {
+        loadError.value = reason instanceof Error ? reason.message : "Topic 删除失败";
+    }
+    finally {
+        deletingTopic.value = false;
     }
 }
 function toggleMessage(message) {
@@ -311,6 +350,14 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({});
 (__VLS_ctx.topic);
 __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.removeTopic) },
+    ...{ class: "topic-delete-button" },
+    type: "button",
+    disabled: (__VLS_ctx.deletingTopic),
+});
+/** @type {__VLS_StyleScopedClasses['topic-delete-button']} */ ;
+(__VLS_ctx.deletingTopic ? "删除中…" : "删除 Topic");
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "summary-grid topic-health-summary" },
 });
@@ -394,7 +441,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
             // @ts-ignore
-            [topic, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+            [topic, removeTopic, deletingTopic, deletingTopic, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
         } },
     type: "button",
     'aria-expanded': (!__VLS_ctx.healthCollapsed),

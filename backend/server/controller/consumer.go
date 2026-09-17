@@ -42,3 +42,24 @@ func (h *Handler) ListConsumerPartitions(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, response)
 }
+
+// DeleteConsumer deletes exactly one consumer group identified by the route
+// parameter. Kafka rejects the operation while the group still has members.
+func (h *Handler) DeleteConsumer(w http.ResponseWriter, r *http.Request) {
+	groupID := strings.TrimSpace(r.PathValue("groupID"))
+	if groupID == "" {
+		writeJSON(w, http.StatusBadRequest, model.APIResponse{Message: "Consumer Group 不能为空"})
+		return
+	}
+	_, client, ctx, cancel, err := openClientFromRequest(w, r)
+	if err != nil {
+		return
+	}
+	defer cancel()
+	defer client.Close()
+	if err := logic.DeleteConsumer(ctx, client, groupID); err != nil {
+		writeJSON(w, http.StatusBadGateway, model.APIResponse{Message: logic.FriendlyKafkaError(err)})
+		return
+	}
+	writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Message: "Consumer Group 已删除"})
+}

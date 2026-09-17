@@ -1,7 +1,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
-import { listTopics } from "@/api/connections";
+import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, listTopics } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 const keyword = ref("");
 const page = ref(1);
@@ -10,6 +10,7 @@ const topics = ref([]);
 const totalPartitions = ref(0);
 const loading = ref(false);
 const loadError = ref("");
+const deletingTopic = ref("");
 const connection = useConnectionStore();
 const router = useRouter();
 const filteredTopics = computed(() => topics.value.filter((topic) => topic.name.toLowerCase().includes(keyword.value.toLowerCase())));
@@ -42,6 +43,39 @@ async function loadTopics() {
 onMounted(loadTopics);
 function openTopic(topic) {
     router.push({ name: "topic-detail", params: { topic } });
+}
+async function removeTopic(topic) {
+    if (deletingTopic.value)
+        return;
+    deletingTopic.value = topic;
+    loadError.value = "";
+    try {
+        const plan = await fetchTopicDeletionPlan(topic, connection.form);
+        const deleting = plan.groupsToDelete.length
+            ? `\n\n将同时删除仅消费此 Topic 的 ${plan.groupsToDelete.length} 个消费组：\n${plan.groupsToDelete.map((group) => `- ${group.groupId}`).join("\n")}`
+            : "\n\n没有仅消费此 Topic 的消费组需要删除。";
+        const keeping = plan.groupsKept.length
+            ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
+            : "";
+        if (!window.confirm(`确定删除 Topic “${topic}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`))
+            return;
+        const result = await deleteTopic(topic, connection.form);
+        if (result.failedGroupDeletions?.length) {
+            const failedGroups = result.failedGroupDeletions;
+            if (window.confirm(`${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`)) {
+                const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
+                const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
+                window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+            }
+        }
+        topics.value = topics.value.filter((item) => item.name !== topic);
+    }
+    catch (reason) {
+        loadError.value = reason instanceof Error ? reason.message : "Topic 删除失败";
+    }
+    finally {
+        deletingTopic.value = "";
+    }
 }
 const __VLS_ctx = {
     ...{},
@@ -138,6 +172,11 @@ if (__VLS_ctx.filteredTopics.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({
+        ...{ class: "topic-actions-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['topic-actions-heading']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.tbody, __VLS_intrinsics.tbody)({});
     for (const [topic] of __VLS_vFor((__VLS_ctx.paginatedTopics))) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({
@@ -169,6 +208,10 @@ if (__VLS_ctx.filteredTopics.length) {
         /** @type {__VLS_StyleScopedClasses['row-arrow']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         (topic.partitions);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({
+            title: (topic.consumerGroupCount === undefined ? '无法读取消费组数据' : ''),
+        });
+        (topic.consumerGroupCount ?? "—");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         (topic.internal ? "内部" : "业务");
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
@@ -178,8 +221,28 @@ if (__VLS_ctx.filteredTopics.length) {
         /** @type {__VLS_StyleScopedClasses['error']} */ ;
         /** @type {__VLS_StyleScopedClasses['row-status']} */ ;
         (topic.healthy ? "正常" : `异常${topic.problemPartitions ? `（${topic.problemPartitions} 个分区）` : ""}`);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({
+            ...{ class: "topic-actions-cell" },
+        });
+        /** @type {__VLS_StyleScopedClasses['topic-actions-cell']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.filteredTopics.length))
+                        throw 0;
+                    return (__VLS_ctx.removeTopic(topic.name));
+                    // @ts-ignore
+                    [removeTopic,];
+                } },
+            ...{ class: "consumer-delete-button" },
+            type: "button",
+            disabled: (Boolean(__VLS_ctx.deletingTopic)),
+            'aria-label': (`删除 Topic ${topic.name}`),
+            title: "删除 Topic 及其专属消费组",
+        });
+        /** @type {__VLS_StyleScopedClasses['consumer-delete-button']} */ ;
+        (__VLS_ctx.deletingTopic === topic.name ? "删除中…" : "删除");
         // @ts-ignore
-        [];
+        [deletingTopic, deletingTopic,];
     }
 }
 else {

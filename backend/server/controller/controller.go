@@ -1,4 +1,4 @@
-// Package controller adapts HTTP requests to read-only Kafka use cases.
+// Package controller adapts HTTP requests to Kafka use cases.
 package controller
 
 type Handler struct{}

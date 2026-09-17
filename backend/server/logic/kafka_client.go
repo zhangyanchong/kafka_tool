@@ -1,4 +1,4 @@
-// Package logic contains read-only Kafka operations and aggregations.
+// Package logic contains Kafka operations and aggregations.
 package logic
 
 import (

@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
+	deleteConsumer,
+  deleteTopic,
+  fetchTopicDeletionPlan,
   fetchTopicHealth,
+  produceTopicMessage,
+	recreateTopic,
   searchTopicMessages,
   type KafkaMessage,
   type TopicHealth,
@@ -24,6 +29,7 @@ declare global {
 }
 
 const route = useRoute();
+const router = useRouter();
 const connection = useConnectionStore();
 const topic = computed(() => String(route.params.topic || ""));
 const messages = ref<KafkaMessage[]>([]);
@@ -50,6 +56,14 @@ const healthCollapsed = ref(true);
 const showAllPartitions = ref(false);
 const healthPage = ref(1);
 const healthPageSize = 10;
+const deletingTopic = ref(false);
+const recreatingTopic = ref(false);
+const showProduceForm = ref(false);
+const producing = ref(false);
+const messageKey = ref("");
+const messageValue = ref("");
+const produceError = ref("");
+const produceSuccess = ref("");
 const paginatedMessages = computed(() => {
   const start = (page.value - 1) * pageSize;
   return messages.value.slice(start, start + pageSize);
@@ -173,6 +187,110 @@ async function loadTopicHealth() {
     healthError.value = reason instanceof Error ? reason.message : "Topic 健康状态读取失败";
   } finally {
     healthLoading.value = false;
+  }
+}
+
+async function removeTopic() {
+  if (deletingTopic.value) return;
+  deletingTopic.value = true;
+  loadError.value = "";
+  try {
+    const plan = await fetchTopicDeletionPlan(topic.value, connection.form);
+    const deleting = plan.groupsToDelete.length
+      ? `\n\n将同时删除仅消费此 Topic 的 ${plan.groupsToDelete.length} 个消费组：\n${plan.groupsToDelete.map((group) => `- ${group.groupId}`).join("\n")}`
+      : "\n\n没有仅消费此 Topic 的消费组需要删除。";
+    const keeping = plan.groupsKept.length
+      ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
+      : "";
+    const confirmed = window.confirm(
+      `确定删除 Topic “${topic.value}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`,
+    );
+    if (!confirmed) return;
+
+    const result = await deleteTopic(topic.value, connection.form);
+    if (result.failedGroupDeletions?.length) {
+      const failedGroups = result.failedGroupDeletions;
+      const retry = window.confirm(
+        `${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`,
+      );
+      if (retry) {
+        const retries = await Promise.allSettled(
+          failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)),
+        );
+        const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
+        window.alert(
+          stillFailed.length
+            ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}`
+            : "已完成消费组的再次删除。",
+        );
+      }
+    }
+    await router.push({ name: "topics" });
+  } catch (reason) {
+    loadError.value = reason instanceof Error ? reason.message : "Topic 删除失败";
+  } finally {
+    deletingTopic.value = false;
+  }
+}
+
+async function recreateCurrentTopic() {
+  if (recreatingTopic.value || deletingTopic.value) return;
+  recreatingTopic.value = true;
+  loadError.value = "";
+  try {
+    const plan = await fetchTopicDeletionPlan(topic.value, connection.form);
+    const deleting = plan.groupsToDelete.length
+      ? `\n\n将同时删除仅消费此 Topic 的 ${plan.groupsToDelete.length} 个消费组：\n${plan.groupsToDelete.map((group) => `- ${group.groupId}`).join("\n")}`
+      : "\n\n没有仅消费此 Topic 的消费组需要删除。";
+    const keeping = plan.groupsKept.length
+      ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
+      : "";
+    if (!window.confirm(`确定删除并重建 Topic “${topic.value}”吗？所有消息将被清空；新 Topic 会保留原分区数和副本数。${deleting}${keeping}`)) return;
+
+    const result = await recreateTopic(topic.value, connection.form);
+    window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
+    if (result.failedGroupDeletions?.length) {
+      const failedGroups = result.failedGroupDeletions;
+      if (window.confirm(`以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`)) {
+        const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
+        const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
+        window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+      }
+    }
+    await Promise.all([search(), loadTopicHealth()]);
+  } catch (reason) {
+    loadError.value = reason instanceof Error ? reason.message : "Topic 重建失败";
+  } finally {
+    recreatingTopic.value = false;
+  }
+}
+
+function openProduceForm() {
+  produceError.value = "";
+  produceSuccess.value = "";
+  showProduceForm.value = true;
+}
+
+async function produceMessage() {
+  if (producing.value) return;
+  if (!messageValue.value.trim()) {
+    produceError.value = "消息内容不能为空";
+    return;
+  }
+  if (!window.confirm(`确认向 Topic “${topic.value}”写入这条消息吗？写入后无法撤销。`)) return;
+
+  producing.value = true;
+  produceError.value = "";
+  try {
+    const result = await produceTopicMessage(topic.value, connection.form, messageKey.value, messageValue.value);
+    produceSuccess.value = `已写入分区 ${result.partition}，Offset ${result.offset}`;
+    messageKey.value = "";
+    messageValue.value = "";
+    await Promise.all([search(), loadTopicHealth()]);
+  } catch (reason) {
+    produceError.value = reason instanceof Error ? reason.message : "消息写入失败";
+  } finally {
+    producing.value = false;
   }
 }
 
@@ -307,7 +425,34 @@ onMounted(() => {
         <h1>{{ topic }}</h1>
         <p>按时间和内容检索消息。默认展示最新 20 条，不会提交消费 Offset。</p>
       </div>
+      <div class="topic-header-actions">
+        <button class="topic-produce-button" type="button" :disabled="deletingTopic" @click="openProduceForm">添加数据</button>
+        <button class="topic-recreate-button" type="button" :disabled="deletingTopic || recreatingTopic" @click="recreateCurrentTopic">
+          {{ recreatingTopic ? "重建中…" : "删除并重建" }}
+        </button>
+        <button class="topic-delete-button" type="button" :disabled="deletingTopic" @click="removeTopic">
+          {{ deletingTopic ? "删除中…" : "删除 Topic" }}
+        </button>
+      </div>
     </div>
+
+    <form v-if="showProduceForm" class="produce-card" @submit.prevent="produceMessage">
+      <div class="produce-card-heading">
+        <div><strong>添加数据</strong><small>消息会写入 {{ topic }}；Kafka 将自动选择分区。</small></div>
+        <button type="button" :disabled="producing" @click="showProduceForm = false">取消</button>
+      </div>
+      <label>
+        <span>Key（可选）</span>
+        <input v-model="messageKey" placeholder="留空则发送无 Key 消息" />
+      </label>
+      <label>
+        <span>消息内容</span>
+        <textarea v-model="messageValue" rows="6" required placeholder="输入文本或 JSON 数据" />
+      </label>
+      <p v-if="produceError" class="produce-feedback error">{{ produceError }}</p>
+      <p v-if="produceSuccess" class="produce-feedback success">{{ produceSuccess }}</p>
+      <div class="produce-actions"><button class="topic-produce-button" type="submit" :disabled="producing">{{ producing ? "保存中…" : "保存并发送" }}</button></div>
+    </form>
 
     <div class="summary-grid topic-health-summary">
       <article><span>消息量（估算）</span><strong>{{ estimatedMessageMetric() }}</strong><small>分区起止 Offset 差值</small></article>

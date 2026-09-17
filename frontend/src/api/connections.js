@@ -41,6 +41,12 @@ export function listTopics(payload) {
 export function fetchTopicHealth(topic, payload) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/health`, payload);
 }
+export function fetchTopicDeletionPlan(topic, payload) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/deletion-plan`, payload);
+}
+export function deleteTopic(topic, payload) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/delete`, payload);
+}
 export function searchTopicMessages(topic, payload, search) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
         ...payload,
@@ -52,6 +58,9 @@ export function listConsumers(payload) {
 }
 export function listConsumerPartitions(groupId, payload) {
     return postKafka(`/api/v1/consumers/${encodeURIComponent(groupId)}/partitions`, payload);
+}
+export function deleteConsumer(groupId, payload) {
+    return postKafka(`/api/v1/consumers/${encodeURIComponent(groupId)}/delete`, payload);
 }
 export function fetchMetricSnapshot(payload, topic, groupId) {
     return postKafka("/api/v1/metrics/snapshot", {

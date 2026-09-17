@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
-import { listConsumers, type KafkaConsumer } from "@/api/connections";
+import { deleteConsumer, listConsumers, type KafkaConsumer } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 
 const keyword = ref("");
@@ -12,6 +12,7 @@ const pageSize = 10;
 const consumers = ref<KafkaConsumer[]>([]);
 const loading = ref(false);
 const loadError = ref("");
+const deletingGroupId = ref("");
 const connection = useConnectionStore();
 const router = useRouter();
 
@@ -93,6 +94,25 @@ onMounted(loadConsumers);
 function openConsumer(groupId: string) {
   router.push({ name: "consumer-detail", params: { groupId } });
 }
+
+async function removeConsumer(groupId: string) {
+  const confirmed = window.confirm(
+    `确定删除消费组“${groupId}”吗？这会删除该组的消费进度，且无法恢复。其他消费组不会受到影响。`,
+  );
+  if (!confirmed) return;
+
+  deletingGroupId.value = groupId;
+  loadError.value = "";
+  try {
+    await deleteConsumer(groupId, connection.form);
+    consumers.value = consumers.value.filter((consumer) => consumer.groupId !== groupId);
+  } catch (reason) {
+    loadError.value = reason instanceof Error ? reason.message : "Consumer Group 删除失败";
+  } finally {
+    deletingGroupId.value = "";
+  }
+}
+
 </script>
 
 <template>
@@ -132,7 +152,7 @@ function openConsumer(groupId: string) {
       </div>
 
       <table v-if="filteredConsumers.length">
-        <thead><tr><th>Consumer Group</th><th>状态</th><th>协议类型</th><th>Group 类型</th></tr></thead>
+        <thead><tr><th>Consumer Group</th><th>状态</th><th>协议类型</th><th>Group 类型</th><th class="consumer-actions-heading">操作</th></tr></thead>
         <tbody>
           <tr
             v-for="consumer in paginatedConsumers"
@@ -150,11 +170,25 @@ function openConsumer(groupId: string) {
             </td>
             <td>{{ consumer.protocolType || "未报告" }}</td>
             <td>{{ consumer.groupType || "未报告" }}</td>
+            <td class="consumer-actions-cell">
+              <button
+                class="consumer-delete-button"
+                type="button"
+                :disabled="Boolean(deletingGroupId)"
+                :aria-label="`删除消费组 ${consumer.groupId}`"
+                title="删除该消费组"
+                @click.stop="removeConsumer(consumer.groupId)"
+              >
+                {{ deletingGroupId === consumer.groupId ? "处理中…" : "删除" }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
 
-      <div v-else class="empty-state">
+      <p v-if="loadError && filteredConsumers.length" class="consumer-action-error">{{ loadError }}</p>
+
+      <div v-if="!filteredConsumers.length" class="empty-state">
         <div class="empty-icon consumer">
           <svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3" /><circle cx="16.5" cy="10" r="2.5" /><path d="M3.5 19c.3-3 1.8-4.5 4.5-4.5s4.2 1.5 4.5 4.5M13 18.5c.3-2.4 1.4-3.6 3.5-3.6 2.2 0 3.4 1.2 3.7 3.6" /></svg>
         </div>

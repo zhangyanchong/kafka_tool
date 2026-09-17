@@ -8,6 +8,7 @@ import (
 	"kafka-tool/backend/server/model"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -25,6 +26,56 @@ func FindConsumers(ctx context.Context, client *kgo.Client) (model.ConsumerListR
 		})
 	}
 	return model.ConsumerListResponse{Items: items, Total: len(items)}, nil
+}
+
+// DeleteConsumer removes the offsets and metadata for one named consumer
+// group. Active members are first removed from that same group so Kafka will
+// accept the delete request. Passing one group ID is deliberate: no other
+// group is included in either Kafka request.
+func DeleteConsumer(ctx context.Context, client *kgo.Client, groupID string) error {
+	admin := kadm.NewClient(client)
+	described, err := admin.DescribeGroups(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if group, ok := described[groupID]; ok {
+		if group.Err != nil {
+			return group.Err
+		}
+		if err := removeConsumerMembers(ctx, client, groupID, group.Members); err != nil {
+			return err
+		}
+	}
+	_, err = admin.DeleteGroup(ctx, groupID)
+	return err
+}
+
+func removeConsumerMembers(ctx context.Context, client *kgo.Client, groupID string, members []kadm.DescribedGroupMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+	req := kmsg.NewPtrLeaveGroupRequest()
+	req.Version = 3 // Kafka 2.3+ supports removing specific group members.
+	req.Group = groupID
+	for _, described := range members {
+		member := kmsg.NewLeaveGroupRequestMember()
+		member.MemberID = described.MemberID
+		member.InstanceID = described.InstanceID
+		req.Members = append(req.Members, member)
+	}
+	response, err := req.RequestWith(ctx, client)
+	if err != nil {
+		return err
+	}
+	if err := kerr.ErrorForCode(response.ErrorCode); err != nil {
+		return err
+	}
+	for _, member := range response.Members {
+		if err := kerr.ErrorForCode(member.ErrorCode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func FindConsumerPartitions(ctx context.Context, client *kgo.Client, groupID string) (model.ConsumerPartitionsResponse, error) {
