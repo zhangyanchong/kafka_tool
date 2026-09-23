@@ -1,9 +1,10 @@
-import { onBeforeUnmount, onMounted } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
 import { currentTheme, renderTheme } from "@/theme";
 const store = useConnectionStore();
 const router = useRouter();
+const pendingDeletion = ref(null);
 onMounted(() => renderTheme("light"));
 onBeforeUnmount(() => renderTheme(currentTheme.value));
 function enterCluster(id) {
@@ -19,10 +20,13 @@ function editCluster(id) {
     router.push({ path: "/connect", query: { id, mode: "edit" } });
 }
 function deleteCluster(id, name) {
-    if (!window.confirm(`确定删除集群“${name}”吗？\n\n此操作只会删除本地保存的连接配置，不会影响 Kafka 服务端数据。`)) {
+    pendingDeletion.value = { id, name };
+}
+function confirmDeleteCluster() {
+    if (!pendingDeletion.value)
         return;
-    }
-    store.deleteConnection(id);
+    store.deleteConnection(pendingDeletion.value.id);
+    pendingDeletion.value = null;
 }
 function formatTime(value) {
     if (!value)
@@ -285,7 +289,59 @@ else {
     [];
     var __VLS_21;
 }
+if (__VLS_ctx.pendingDeletion) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.pendingDeletion))
+                    throw 0;
+                return (__VLS_ctx.pendingDeletion = null);
+                // @ts-ignore
+                [pendingDeletion, pendingDeletion,];
+            } },
+        ...{ class: "app-dialog-backdrop" },
+        role: "presentation",
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-backdrop']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "app-dialog" },
+        role: "alertdialog",
+        'aria-modal': "true",
+        'aria-labelledby': "delete-cluster-title",
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "app-dialog-kicker" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-kicker']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        id: "delete-cluster-title",
+    });
+    (__VLS_ctx.pendingDeletion.name);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "app-dialog-actions" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-actions']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.pendingDeletion))
+                    throw 0;
+                return (__VLS_ctx.pendingDeletion = null);
+                // @ts-ignore
+                [pendingDeletion, pendingDeletion,];
+            } },
+        type: "button",
+        ...{ class: "app-dialog-cancel" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-cancel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.confirmDeleteCluster) },
+        type: "button",
+        ...{ class: "app-dialog-danger" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-danger']} */ ;
+}
 // @ts-ignore
-[];
+[confirmDeleteCluster,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

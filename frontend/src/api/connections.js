@@ -47,11 +47,20 @@ export function fetchTopicDeletionPlan(topic, payload) {
 export function deleteTopic(topic, payload) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/delete`, payload);
 }
+export function recreateTopic(topic, payload) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/recreate`, payload);
+}
+export function createTopic(topic, payload, partitions, replicationFactor) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/create`, { ...payload, partitions, replicationFactor });
+}
 export function searchTopicMessages(topic, payload, search) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
         ...payload,
         ...search,
     });
+}
+export function produceTopicMessage(topic, payload, key, value) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/produce`, { ...payload, key, value });
 }
 export function listConsumers(payload) {
     return postKafka("/api/v1/consumers/list", payload);

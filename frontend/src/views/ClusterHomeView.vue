@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useConnectionStore } from "@/stores/connection";
 import { currentTheme, renderTheme } from "@/theme";
 
 const store = useConnectionStore();
 const router = useRouter();
+const pendingDeletion = ref<{ id: string; name: string } | null>(null);
 
 onMounted(() => renderTheme("light"));
 onBeforeUnmount(() => renderTheme(currentTheme.value));
@@ -24,10 +25,13 @@ function editCluster(id: string) {
 }
 
 function deleteCluster(id: string, name: string) {
-  if (!window.confirm(`确定删除集群“${name}”吗？\n\n此操作只会删除本地保存的连接配置，不会影响 Kafka 服务端数据。`)) {
-    return;
-  }
-  store.deleteConnection(id);
+  pendingDeletion.value = { id, name };
+}
+
+function confirmDeleteCluster() {
+  if (!pendingDeletion.value) return;
+  store.deleteConnection(pendingDeletion.value.id);
+  pendingDeletion.value = null;
 }
 
 function formatTime(value: string) {
@@ -128,5 +132,17 @@ function formatTime(value: string) {
         <RouterLink class="add-cluster-button" to="/connect">添加集群</RouterLink>
       </div>
     </section>
+
+    <div v-if="pendingDeletion" class="app-dialog-backdrop" role="presentation" @click.self="pendingDeletion = null">
+      <section class="app-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-cluster-title">
+        <span class="app-dialog-kicker">删除连接</span>
+        <h2 id="delete-cluster-title">删除集群“{{ pendingDeletion.name }}”？</h2>
+        <p>此操作只会删除本地保存的连接配置，不会影响 Kafka 服务端数据。</p>
+        <div class="app-dialog-actions">
+          <button type="button" class="app-dialog-cancel" @click="pendingDeletion = null">取消</button>
+          <button type="button" class="app-dialog-danger" @click="confirmDeleteCluster">确认删除</button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>

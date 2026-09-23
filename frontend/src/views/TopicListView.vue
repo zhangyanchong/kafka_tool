@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
 import { createTopic, deleteConsumer, deleteTopic, fetchTopicDeletionPlan, listTopics, recreateTopic } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
+import { alertDialog, confirmDialog } from "@/dialog";
 
 interface TopicRow {
   name: string;
@@ -23,6 +24,8 @@ const loading = ref(false);
 const loadError = ref("");
 const deletingTopic = ref("");
 const recreatingTopic = ref("");
+const pendingTopicAction = ref<{ action: "delete" | "recreate"; topic: string } | null>(null);
+const confirmedTopicAction = ref<{ action: "delete" | "recreate"; topic: string } | null>(null);
 const showCreateForm = ref(false);
 const creatingTopic = ref(false);
 const newTopicName = ref("");
@@ -72,6 +75,11 @@ function openTopic(topic: string) {
 
 async function removeTopic(topic: string) {
   if (deletingTopic.value) return;
+  if (confirmedTopicAction.value?.action !== "delete" || confirmedTopicAction.value.topic !== topic) {
+    pendingTopicAction.value = { action: "delete", topic };
+    return;
+  }
+  confirmedTopicAction.value = null;
   deletingTopic.value = topic;
   loadError.value = "";
   try {
@@ -82,8 +90,6 @@ async function removeTopic(topic: string) {
     const keeping = plan.groupsKept.length
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
-    if (!window.confirm(`确定删除 Topic “${topic}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`)) return;
-
     const result = await deleteTopic(topic, connection.form);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
@@ -103,6 +109,11 @@ async function removeTopic(topic: string) {
 
 async function recreateCurrentTopic(topic: string) {
   if (deletingTopic.value || recreatingTopic.value) return;
+  if (confirmedTopicAction.value?.action !== "recreate" || confirmedTopicAction.value.topic !== topic) {
+    pendingTopicAction.value = { action: "recreate", topic };
+    return;
+  }
+  confirmedTopicAction.value = null;
   recreatingTopic.value = topic;
   loadError.value = "";
   try {
@@ -113,8 +124,6 @@ async function recreateCurrentTopic(topic: string) {
     const keeping = plan.groupsKept.length
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
-    if (!window.confirm(`确定删除并重建 Topic “${topic}”吗？所有消息将被清空；新 Topic 会保留原分区数和副本数。${deleting}${keeping}`)) return;
-
     const result = await recreateTopic(topic, connection.form);
     window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
     if (result.failedGroupDeletions?.length) {
@@ -153,7 +162,7 @@ async function createNewTopic() {
     return;
   }
   const replication = newTopicReplicationFactor.value;
-  if (!window.confirm(`确定创建 Topic “${topic}”吗？\n分区数：${newTopicPartitions.value}；副本数：${replication ?? "使用集群默认值"}`)) return;
+  if (!await confirmDialog("创建 Topic？", `Topic：${topic}\n分区数：${newTopicPartitions.value}\n副本数：${replication ?? "使用集群默认值"}`, "确认创建")) return;
 
   creatingTopic.value = true;
   createError.value = "";
@@ -162,7 +171,7 @@ async function createNewTopic() {
     showCreateForm.value = false;
     newTopicName.value = "";
     await loadTopics();
-    window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
+    await alertDialog("Topic 创建成功", `${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
   } catch (reason) {
     createError.value = reason instanceof Error ? reason.message : "Topic 创建失败";
   } finally {
@@ -216,6 +225,7 @@ async function createNewTopic() {
         </div>
         <span>{{ filteredTopics.length }} 个 Topic</span>
       </div>
+      <p class="topic-danger-hint">提示：<b>清空并重建</b>会删除全部消息并重建 Topic；<b>删除</b>会永久删除 Topic。两项操作都会影响只消费该 Topic 的消费组。</p>
 
       <table v-if="filteredTopics.length">
         <thead><tr><th>Topic 名称</th><th>分区</th><th>消费组数</th><th>类型</th><th>状态</th><th class="topic-actions-heading">操作</th></tr></thead>
@@ -245,10 +255,10 @@ async function createNewTopic() {
                 type="button"
                 :disabled="Boolean(deletingTopic || recreatingTopic)"
                 :aria-label="`删除并重建 Topic ${topic.name}`"
-                title="清空消息并按原分区数、副本数重建"
+                title="清空消息并按原分区数、副本数和自定义配置重建"
                 @click.stop="recreateCurrentTopic(topic.name)"
               >
-                {{ recreatingTopic === topic.name ? "重建中…" : "重建" }}
+                {{ recreatingTopic === topic.name ? "重建中…" : "清空并重建" }}
               </button>
               <button
                 class="consumer-delete-button"
@@ -277,6 +287,17 @@ async function createNewTopic() {
         :page-size="pageSize"
         :total="filteredTopics.length"
       />
+      <div v-if="pendingTopicAction" class="app-dialog-backdrop" role="presentation" @click.self="pendingTopicAction = null">
+        <section class="app-dialog" role="alertdialog" aria-modal="true" aria-labelledby="topic-list-action-title">
+          <span class="app-dialog-kicker">高风险操作</span>
+          <h2 id="topic-list-action-title">{{ pendingTopicAction.action === 'recreate' ? `清空并重建 “${pendingTopicAction.topic}”？` : `永久删除 “${pendingTopicAction.topic}”？` }}</h2>
+          <p>{{ pendingTopicAction.action === 'recreate' ? '全部消息会被清空，并按原分区数、副本数和自定义配置重建。专属消费组也会被删除。' : 'Topic、全部消息和专属消费组会被永久删除，无法恢复。' }}</p>
+          <div class="app-dialog-actions">
+            <button type="button" class="app-dialog-cancel" @click="pendingTopicAction = null">取消</button>
+            <button type="button" class="app-dialog-danger" @click="confirmedTopicAction = pendingTopicAction; pendingTopicAction = null; confirmedTopicAction?.action === 'delete' ? removeTopic(confirmedTopicAction.topic) : recreateCurrentTopic(confirmedTopicAction!.topic)">{{ pendingTopicAction.action === 'recreate' ? '确认清空并重建' : '确认永久删除' }}</button>
+          </div>
+        </section>
+      </div>
     </div>
   </section>
 </template>

@@ -47,6 +47,22 @@ func NormalizeMessageSearch(req *MessageSearchRequest) (time.Time, time.Time, er
 	if req.ScanLimit < 1 || req.ScanLimit > 1000000 {
 		return time.Time{}, time.Time{}, errors.New("最大查询条数必须在 1 到 1,000,000 之间")
 	}
+	conditions := make([]MessageSearchCondition, 0, len(req.Conditions))
+	for _, condition := range req.Conditions {
+		condition.Field = strings.TrimSpace(condition.Field)
+		condition.Value = strings.TrimSpace(condition.Value)
+		if condition.Value == "" {
+			continue
+		}
+		if condition.Field == "" {
+			condition.Field = "any"
+		}
+		if condition.Field != "any" && condition.Field != "key" && condition.Field != "value" {
+			return time.Time{}, time.Time{}, errors.New("检索位置只能是消息内容、Key 或两者")
+		}
+		conditions = append(conditions, condition)
+	}
+	req.Conditions = conditions
 	fromTime, err := ParseOptionalTime(req.FromTime)
 	if err != nil {
 		return time.Time{}, time.Time{}, errors.New("开始时间格式不正确")

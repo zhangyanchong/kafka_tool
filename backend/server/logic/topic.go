@@ -112,7 +112,7 @@ func DeleteTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, topic
 }
 
 func RecreateTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, topic string) (model.TopicRecreationResponse, error) {
-	partitions, replicationFactor, err := topicLayout(ctx, client, topic)
+	partitions, replicationFactor, topicConfigs, err := topicRecreateSettings(ctx, client, topic)
 	if err != nil {
 		return model.TopicRecreationResponse{}, err
 	}
@@ -123,13 +123,13 @@ func RecreateTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, top
 	if err := waitForTopicDeletion(ctx, client, topic); err != nil {
 		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 删除尚未完成，未重建：%w", err)
 	}
-	if _, err := kadm.NewClient(client).CreateTopic(ctx, partitions, replicationFactor, nil, topic); err != nil {
+	if _, err := kadm.NewClient(client).CreateTopic(ctx, partitions, replicationFactor, topicConfigs, topic); err != nil {
 		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 已删除，但重建失败：%w", err)
 	}
 	if err := waitForTopicReady(ctx, client, topic, partitions); err != nil {
 		return model.TopicRecreationResponse{}, fmt.Errorf("Topic 已创建，但分区尚未就绪：%w", err)
 	}
-	message := "Topic 已按原分区数和副本数重建"
+	message := "Topic 已按原分区数、副本数和自定义配置重建"
 	if len(deleted.FailedGroupDeletions) > 0 {
 		message += "；部分消费组未删除"
 	}
@@ -137,6 +137,33 @@ func RecreateTopicAndConsumerGroups(ctx context.Context, client *kgo.Client, top
 		Success: true, Message: message, Partitions: partitions, ReplicationFactor: replicationFactor,
 		DeletedGroups: deleted.DeletedGroups, FailedGroupDeletions: deleted.FailedGroupDeletions,
 	}, nil
+}
+
+func topicRecreateSettings(ctx context.Context, client *kgo.Client, topic string) (int32, int16, map[string]*string, error) {
+	partitions, replicationFactor, err := topicLayout(ctx, client, topic)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	resources, err := kadm.NewClient(client).DescribeTopicConfigs(ctx, topic)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("读取 Topic 自定义配置失败：%w", err)
+	}
+	resource, err := resources.On(topic, nil)
+	if err != nil || resource.Err != nil {
+		if err == nil {
+			err = resource.Err
+		}
+		return 0, 0, nil, fmt.Errorf("读取 Topic 自定义配置失败：%w", err)
+	}
+	configs := make(map[string]*string)
+	for _, config := range resource.Configs {
+		if config.Source != kmsg.ConfigSourceDynamicTopicConfig || config.Sensitive || config.Value == nil {
+			continue
+		}
+		value := *config.Value
+		configs[config.Key] = &value
+	}
+	return partitions, replicationFactor, configs, nil
 }
 
 func topicLayout(ctx context.Context, client *kgo.Client, topic string) (int32, int16, error) {
@@ -444,7 +471,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 		return emptyMessageSearchResponse(estimatedMessages), nil
 	}
 	perPartitionWindow := int64(req.Limit)
-	if strings.TrimSpace(req.Keyword) != "" {
+	if hasMessageSearchFilter(req) {
 		perPartitionWindow = tools.MaxInt64(perPartitionWindow, int64((req.ScanLimit+partitionCount-1)/partitionCount))
 	}
 	assignments := make(map[string]map[int32]kgo.Offset)
@@ -509,7 +536,6 @@ func estimatedTopicMessages(topic string, startOffsets, endOffsets kadm.ListedOf
 
 func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSearchRequest, endBounds map[int32]int64) ([]model.MessageItem, int, bool, error) {
 	items := make([]model.MessageItem, 0, req.Limit)
-	keyword := strings.ToLower(strings.TrimSpace(req.Keyword))
 	done := make(map[int32]bool)
 	scanned := 0
 	for scanned < req.ScanLimit && len(done) < len(endBounds) {
@@ -537,7 +563,7 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 			}
 			key := strings.ToValidUTF8(string(record.Key), "�")
 			value := strings.ToValidUTF8(string(record.Value), "�")
-			if keyword != "" && !strings.Contains(strings.ToLower(key), keyword) && !strings.Contains(strings.ToLower(value), keyword) {
+			if !matchesMessageSearch(req, key, value) {
 				return
 			}
 			items = append(items, model.MessageItem{
@@ -551,6 +577,39 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 		}
 	}
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
+}
+
+func hasMessageSearchFilter(req model.MessageSearchRequest) bool {
+	return strings.TrimSpace(req.Keyword) != "" || len(req.Conditions) > 0
+}
+
+func matchesMessageSearch(req model.MessageSearchRequest, key, value string) bool {
+	conditions := append([]model.MessageSearchCondition{}, req.Conditions...)
+	if legacyKeyword := strings.TrimSpace(req.Keyword); legacyKeyword != "" {
+		conditions = append(conditions, model.MessageSearchCondition{Field: "any", Value: legacyKeyword})
+	}
+	if len(conditions) == 0 {
+		return true
+	}
+	for _, condition := range conditions {
+		needle := strings.ToLower(condition.Value)
+		keyMatches := strings.Contains(strings.ToLower(key), needle)
+		valueMatches := strings.Contains(strings.ToLower(value), needle)
+		matched := valueMatches
+		switch condition.Field {
+		case "key":
+			matched = keyMatches
+		case "any":
+			matched = keyMatches || valueMatches
+		}
+		if req.MatchAny && matched {
+			return true
+		}
+		if !req.MatchAny && !matched {
+			return false
+		}
+	}
+	return !req.MatchAny
 }
 
 func emptyMessageSearchResponse(estimatedMessages *int64) model.MessageSearchResponse {

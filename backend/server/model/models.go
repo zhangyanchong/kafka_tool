@@ -26,11 +26,18 @@ type APIResponse struct {
 
 type MessageSearchRequest struct {
 	ConnectionRequest
-	FromTime  string `json:"fromTime"`
-	ToTime    string `json:"toTime"`
-	Keyword   string `json:"keyword"`
-	Limit     int    `json:"limit"`
-	ScanLimit int    `json:"scanLimit"`
+	FromTime   string                   `json:"fromTime"`
+	ToTime     string                   `json:"toTime"`
+	Keyword    string                   `json:"keyword"`
+	Conditions []MessageSearchCondition `json:"conditions"`
+	MatchAny   bool                     `json:"matchAny"`
+	Limit      int                      `json:"limit"`
+	ScanLimit  int                      `json:"scanLimit"`
+}
+
+type MessageSearchCondition struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 type ProduceMessageRequest struct {

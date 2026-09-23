@@ -1,6 +1,6 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, searchTopicMessages, } from "@/api/connections";
+import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, produceTopicMessage, recreateTopic, searchTopicMessages, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 const route = useRoute();
@@ -12,9 +12,12 @@ const fromDate = ref("");
 const fromClock = ref("");
 const toDate = ref("");
 const toClock = ref("");
-const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
+const conditions = ref([{ id: 1, value: "" }]);
+const matchAny = ref(false);
+const advancedSearchOpen = ref(false);
+let nextConditionId = 2;
 const loading = ref(false);
 const loadError = ref("");
 const scanned = ref(0);
@@ -32,6 +35,15 @@ const showAllPartitions = ref(false);
 const healthPage = ref(1);
 const healthPageSize = 10;
 const deletingTopic = ref(false);
+const recreatingTopic = ref(false);
+const pendingTopicAction = ref(null);
+const confirmedTopicAction = ref(null);
+const showProduceForm = ref(false);
+const producing = ref(false);
+const messageKey = ref("");
+const messageValue = ref("");
+const produceError = ref("");
+const produceSuccess = ref("");
 const paginatedMessages = computed(() => {
     const start = (page.value - 1) * pageSize;
     return messages.value.slice(start, start + pageSize);
@@ -109,6 +121,16 @@ function normalizeDateInput(value) {
         return normalized;
     return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
+function addSearchCondition() {
+    conditions.value.push({ id: nextConditionId++, value: "" });
+}
+function removeSearchCondition(id) {
+    if (conditions.value.length === 1) {
+        conditions.value[0].value = "";
+        return;
+    }
+    conditions.value = conditions.value.filter((condition) => condition.id !== id);
+}
 function formatTime(value) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
@@ -156,6 +178,11 @@ async function loadTopicHealth() {
 async function removeTopic() {
     if (deletingTopic.value)
         return;
+    if (confirmedTopicAction.value !== "delete") {
+        pendingTopicAction.value = "delete";
+        return;
+    }
+    confirmedTopicAction.value = null;
     deletingTopic.value = true;
     loadError.value = "";
     try {
@@ -166,9 +193,6 @@ async function removeTopic() {
         const keeping = plan.groupsKept.length
             ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
             : "";
-        const confirmed = window.confirm(`确定删除 Topic “${topic.value}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`);
-        if (!confirmed)
-            return;
         const result = await deleteTopic(topic.value, connection.form);
         if (result.failedGroupDeletions?.length) {
             const failedGroups = result.failedGroupDeletions;
@@ -188,6 +212,75 @@ async function removeTopic() {
     }
     finally {
         deletingTopic.value = false;
+    }
+}
+async function recreateCurrentTopic() {
+    if (recreatingTopic.value || deletingTopic.value)
+        return;
+    if (confirmedTopicAction.value !== "recreate") {
+        pendingTopicAction.value = "recreate";
+        return;
+    }
+    confirmedTopicAction.value = null;
+    recreatingTopic.value = true;
+    loadError.value = "";
+    try {
+        const plan = await fetchTopicDeletionPlan(topic.value, connection.form);
+        const deleting = plan.groupsToDelete.length
+            ? `\n\n将同时删除仅消费此 Topic 的 ${plan.groupsToDelete.length} 个消费组：\n${plan.groupsToDelete.map((group) => `- ${group.groupId}`).join("\n")}`
+            : "\n\n没有仅消费此 Topic 的消费组需要删除。";
+        const keeping = plan.groupsKept.length
+            ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
+            : "";
+        const result = await recreateTopic(topic.value, connection.form);
+        window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
+        if (result.failedGroupDeletions?.length) {
+            const failedGroups = result.failedGroupDeletions;
+            if (window.confirm(`以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`)) {
+                const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
+                const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
+                window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+            }
+        }
+        await Promise.all([search(), loadTopicHealth()]);
+    }
+    catch (reason) {
+        loadError.value = reason instanceof Error ? reason.message : "Topic 重建失败";
+    }
+    finally {
+        recreatingTopic.value = false;
+    }
+}
+function openProduceForm() {
+    produceError.value = "";
+    produceSuccess.value = "";
+    showProduceForm.value = true;
+}
+async function produceMessage() {
+    if (producing.value)
+        return;
+    if (!messageValue.value.trim()) {
+        produceError.value = "消息内容不能为空";
+        return;
+    }
+    if (!window.confirm(`确认向 Topic “${topic.value}”写入这条消息吗？写入后无法撤销。`))
+        return;
+    producing.value = true;
+    produceError.value = "";
+    try {
+        const result = await produceTopicMessage(topic.value, connection.form, messageKey.value, messageValue.value);
+        produceSuccess.value = `发送成功：已写入分区 ${result.partition}，Offset ${result.offset}`;
+        messageKey.value = "";
+        messageValue.value = "";
+        // Kafka 已确认写入后立刻结束按钮的“保存中”状态；后续刷新不应让用户误以为写入还未完成。
+        producing.value = false;
+        await Promise.all([search(), loadTopicHealth()]);
+    }
+    catch (reason) {
+        produceError.value = reason instanceof Error ? reason.message : "消息写入失败";
+    }
+    finally {
+        producing.value = false;
     }
 }
 function toggleMessage(message) {
@@ -242,7 +335,10 @@ async function search() {
         const response = await searchTopicMessages(topic.value, connection.form, {
             fromTime: normalizedFromTime,
             toTime: normalizedToTime,
-            keyword: keyword.value.trim(),
+            conditions: conditions.value
+                .map(({ value }) => ({ field: "value", value: value.trim() }))
+                .filter((condition) => condition.value),
+            matchAny: matchAny.value,
             limit: limit.value,
             scanLimit: scanLimit.value,
         });
@@ -265,7 +361,8 @@ function resetSearch() {
     fromClock.value = "";
     toDate.value = "";
     toClock.value = "";
-    keyword.value = "";
+    conditions.value = [{ id: nextConditionId++, value: "" }];
+    matchAny.value = false;
     limit.value = 20;
     scanLimit.value = 10000;
     search();
@@ -350,6 +447,25 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({});
 (__VLS_ctx.topic);
 __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "topic-header-actions" },
+});
+/** @type {__VLS_StyleScopedClasses['topic-header-actions']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.openProduceForm) },
+    ...{ class: "topic-produce-button" },
+    type: "button",
+    disabled: (__VLS_ctx.deletingTopic),
+});
+/** @type {__VLS_StyleScopedClasses['topic-produce-button']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.recreateCurrentTopic) },
+    ...{ class: "topic-recreate-button" },
+    type: "button",
+    disabled: (__VLS_ctx.deletingTopic || __VLS_ctx.recreatingTopic),
+});
+/** @type {__VLS_StyleScopedClasses['topic-recreate-button']} */ ;
+(__VLS_ctx.recreatingTopic ? "重建中…" : "清空并重建");
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (__VLS_ctx.removeTopic) },
     ...{ class: "topic-delete-button" },
@@ -358,6 +474,75 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
 });
 /** @type {__VLS_StyleScopedClasses['topic-delete-button']} */ ;
 (__VLS_ctx.deletingTopic ? "删除中…" : "删除 Topic");
+if (__VLS_ctx.showProduceForm) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
+        ...{ onSubmit: (__VLS_ctx.produceMessage) },
+        ...{ class: "produce-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['produce-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "produce-card-heading" },
+    });
+    /** @type {__VLS_StyleScopedClasses['produce-card-heading']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+    (__VLS_ctx.topic);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.showProduceForm))
+                    throw 0;
+                return (__VLS_ctx.showProduceForm = false);
+                // @ts-ignore
+                [topic, topic, openProduceForm, deletingTopic, deletingTopic, deletingTopic, deletingTopic, recreateCurrentTopic, recreatingTopic, recreatingTopic, removeTopic, showProduceForm, showProduceForm, produceMessage,];
+            } },
+        type: "button",
+        disabled: (__VLS_ctx.producing),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        placeholder: "留空则发送无 Key 消息",
+    });
+    (__VLS_ctx.messageKey);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
+        value: (__VLS_ctx.messageValue),
+        rows: "6",
+        required: true,
+        placeholder: "输入文本或 JSON 数据",
+    });
+    if (__VLS_ctx.produceError) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+            ...{ class: "produce-feedback error" },
+        });
+        /** @type {__VLS_StyleScopedClasses['produce-feedback']} */ ;
+        /** @type {__VLS_StyleScopedClasses['error']} */ ;
+        (__VLS_ctx.produceError);
+    }
+    if (__VLS_ctx.produceSuccess) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+            ...{ class: "produce-feedback success" },
+        });
+        /** @type {__VLS_StyleScopedClasses['produce-feedback']} */ ;
+        /** @type {__VLS_StyleScopedClasses['success']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+        (__VLS_ctx.produceSuccess);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "produce-actions" },
+    });
+    /** @type {__VLS_StyleScopedClasses['produce-actions']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ class: "topic-produce-button" },
+        type: "submit",
+        disabled: (__VLS_ctx.producing),
+    });
+    /** @type {__VLS_StyleScopedClasses['topic-produce-button']} */ ;
+    (__VLS_ctx.producing ? "保存中…" : "保存并发送");
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "summary-grid topic-health-summary" },
 });
@@ -441,7 +626,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
             // @ts-ignore
-            [topic, removeTopic, deletingTopic, deletingTopic, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+            [producing, producing, producing, messageKey, messageValue, produceError, produceError, produceSuccess, produceSuccess, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
         } },
     type: "button",
     'aria-expanded': (!__VLS_ctx.healthCollapsed),
@@ -588,31 +773,68 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
     ...{ class: "message-search-card" },
 });
 /** @type {__VLS_StyleScopedClasses['message-search-card']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
-    ...{ class: "content-search" },
-});
-/** @type {__VLS_StyleScopedClasses['content-search']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "search-box wide" },
+    ...{ class: "search-conditions-heading" },
 });
-/** @type {__VLS_StyleScopedClasses['search-box']} */ ;
-/** @type {__VLS_StyleScopedClasses['wide']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.svg, __VLS_intrinsics.svg)({
-    viewBox: "0 0 24 24",
+/** @type {__VLS_StyleScopedClasses['search-conditions-heading']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+    value: (__VLS_ctx.matchAny),
+    'aria-label': "条件匹配方式",
 });
-__VLS_asFunctionalElement1(__VLS_intrinsics.circle)({
-    cx: "11",
-    cy: "11",
-    r: "6.5",
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: (false),
 });
-__VLS_asFunctionalElement1(__VLS_intrinsics.path)({
-    d: "m16 16 4 4",
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: (true),
 });
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    placeholder: "输入关键字，匹配消息 Key 或内容",
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "search-conditions" },
 });
-(__VLS_ctx.keyword);
+/** @type {__VLS_StyleScopedClasses['search-conditions']} */ ;
+for (const [condition, index] of __VLS_vFor((__VLS_ctx.conditions))) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        key: (condition.id),
+        ...{ class: "search-condition-row" },
+    });
+    /** @type {__VLS_StyleScopedClasses['search-condition-row']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "condition-joiner" },
+        ...{ class: ({ muted: index === 0 }) },
+    });
+    /** @type {__VLS_StyleScopedClasses['condition-joiner']} */ ;
+    /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+    (index === 0 ? '当' : (__VLS_ctx.matchAny ? '或' : '且'));
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        placeholder: "输入要包含的文字，例如 D2_IP_202609221130_two_4",
+    });
+    (condition.value);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                return (__VLS_ctx.removeSearchCondition(condition.id));
+                // @ts-ignore
+                [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, matchAny, matchAny, conditions, removeSearchCondition,];
+            } },
+        type: "button",
+        ...{ class: "remove-condition-button" },
+        'aria-label': (`删除第 ${index + 1} 条条件`),
+    });
+    /** @type {__VLS_StyleScopedClasses['remove-condition-button']} */ ;
+    // @ts-ignore
+    [];
+}
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (__VLS_ctx.addSearchCondition) },
+    type: "button",
+    ...{ class: "add-condition-button" },
+});
+/** @type {__VLS_StyleScopedClasses['add-condition-button']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "search-options-row" },
+});
+/** @type {__VLS_StyleScopedClasses['search-options-row']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
     ...{ class: "datetime-label" },
 });
@@ -646,10 +868,9 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
 (__VLS_ctx.fromClock);
 /** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
-    ...{ class: "datetime-label end-datetime-label" },
+    ...{ class: "datetime-label" },
 });
 /** @type {__VLS_StyleScopedClasses['datetime-label']} */ ;
-/** @type {__VLS_StyleScopedClasses['end-datetime-label']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "datetime-fields" },
@@ -678,35 +899,52 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
 });
 (__VLS_ctx.toClock);
 /** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
-    value: (__VLS_ctx.limit),
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            return (__VLS_ctx.advancedSearchOpen = !__VLS_ctx.advancedSearchOpen);
+            // @ts-ignore
+            [addSearchCondition, activateStartTime, activateStartTime, closeNativePicker, closeNativePicker, closeNativePicker, closeNativePicker, fromDate, fromClock, activateEndTime, activateEndTime, toDate, toClock, advancedSearchOpen, advancedSearchOpen,];
+        } },
+    type: "button",
+    ...{ class: "advanced-search-toggle" },
 });
-__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-    value: (20),
-});
-__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-    value: (100),
-});
-__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-    value: (1000),
-});
-__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
-    value: (10000),
-});
-__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    type: "number",
-    min: "1",
-    max: "1000000",
-    step: "1",
-    inputmode: "numeric",
-    required: true,
-    placeholder: "默认 10000，最多 1000000",
-});
-(__VLS_ctx.scanLimit);
+/** @type {__VLS_StyleScopedClasses['advanced-search-toggle']} */ ;
+(__VLS_ctx.advancedSearchOpen ? '收起高级设置' : '高级设置');
+if (__VLS_ctx.advancedSearchOpen) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "advanced-search-options" },
+    });
+    /** @type {__VLS_StyleScopedClasses['advanced-search-options']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+        value: (__VLS_ctx.limit),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: (20),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: (100),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: (1000),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: (10000),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        type: "number",
+        min: "1",
+        max: "1000000",
+        step: "1",
+        inputmode: "numeric",
+        required: true,
+    });
+    (__VLS_ctx.scanLimit);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "message-search-actions" },
 });
@@ -775,7 +1013,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [healthLoading, showAllPartitions, showAllPartitions, visibleHealthPartitions, visibleHealthPartitions, healthPageSize, healthPageSize, healthPage, search, keyword, activateStartTime, activateStartTime, closeNativePicker, closeNativePicker, closeNativePicker, closeNativePicker, fromDate, fromClock, activateEndTime, activateEndTime, toDate, toClock, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [advancedSearchOpen, advancedSearchOpen, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },
@@ -904,7 +1142,69 @@ if (__VLS_ctx.loading) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
 }
+if (__VLS_ctx.pendingTopicAction) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.pendingTopicAction))
+                    throw 0;
+                return (__VLS_ctx.pendingTopicAction = null);
+                // @ts-ignore
+                [loading, loading, messages, pageSize, loadError, page, pendingTopicAction, pendingTopicAction,];
+            } },
+        ...{ class: "app-dialog-backdrop" },
+        role: "presentation",
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-backdrop']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "app-dialog" },
+        role: "alertdialog",
+        'aria-modal': "true",
+        'aria-labelledby': "topic-action-title",
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "app-dialog-kicker" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-kicker']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        id: "topic-action-title",
+    });
+    (__VLS_ctx.pendingTopicAction === 'recreate' ? '清空并重建这个 Topic？' : '永久删除这个 Topic？');
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    (__VLS_ctx.pendingTopicAction === 'recreate' ? '全部消息会被清空，并按原分区数、副本数和自定义配置重建。专属消费组也会被删除。' : 'Topic、全部消息和专属消费组会被永久删除，无法恢复。');
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "app-dialog-actions" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-actions']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.pendingTopicAction))
+                    throw 0;
+                return (__VLS_ctx.pendingTopicAction = null);
+                // @ts-ignore
+                [pendingTopicAction, pendingTopicAction, pendingTopicAction,];
+            } },
+        type: "button",
+        ...{ class: "app-dialog-cancel" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-cancel']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.pendingTopicAction))
+                    throw 0;
+                __VLS_ctx.confirmedTopicAction = __VLS_ctx.pendingTopicAction;
+                __VLS_ctx.pendingTopicAction = null;
+                __VLS_ctx.confirmedTopicAction === 'delete' ? __VLS_ctx.removeTopic() : __VLS_ctx.recreateCurrentTopic();
+                // @ts-ignore
+                [recreateCurrentTopic, removeTopic, pendingTopicAction, pendingTopicAction, confirmedTopicAction, confirmedTopicAction,];
+            } },
+        type: "button",
+        ...{ class: "app-dialog-danger" },
+    });
+    /** @type {__VLS_StyleScopedClasses['app-dialog-danger']} */ ;
+    (__VLS_ctx.pendingTopicAction === 'recreate' ? '确认清空并重建' : '确认永久删除');
+}
 // @ts-ignore
-[loading, loading, messages, pageSize, loadError, page,];
+[pendingTopicAction,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

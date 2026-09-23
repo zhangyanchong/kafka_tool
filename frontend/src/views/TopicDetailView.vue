@@ -16,6 +16,11 @@ import {
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 
+interface SearchCondition {
+  id: number;
+  value: string;
+}
+
 declare global {
   interface Window {
     go?: {
@@ -37,9 +42,12 @@ const fromDate = ref("");
 const fromClock = ref("");
 const toDate = ref("");
 const toClock = ref("");
-const keyword = ref("");
 const limit = ref(20);
 const scanLimit = ref(10000);
+const conditions = ref<SearchCondition[]>([{ id: 1, value: "" }]);
+const matchAny = ref(false);
+const advancedSearchOpen = ref(false);
+let nextConditionId = 2;
 const loading = ref(false);
 const loadError = ref("");
 const scanned = ref(0);
@@ -58,6 +66,8 @@ const healthPage = ref(1);
 const healthPageSize = 10;
 const deletingTopic = ref(false);
 const recreatingTopic = ref(false);
+const pendingTopicAction = ref<"delete" | "recreate" | null>(null);
+const confirmedTopicAction = ref<"delete" | "recreate" | null>(null);
 const showProduceForm = ref(false);
 const producing = ref(false);
 const messageKey = ref("");
@@ -144,6 +154,18 @@ function normalizeDateInput(value: string) {
   return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
 }
 
+function addSearchCondition() {
+  conditions.value.push({ id: nextConditionId++, value: "" });
+}
+
+function removeSearchCondition(id: number) {
+  if (conditions.value.length === 1) {
+    conditions.value[0].value = "";
+    return;
+  }
+  conditions.value = conditions.value.filter((condition) => condition.id !== id);
+}
+
 function formatTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
@@ -192,6 +214,11 @@ async function loadTopicHealth() {
 
 async function removeTopic() {
   if (deletingTopic.value) return;
+  if (confirmedTopicAction.value !== "delete") {
+    pendingTopicAction.value = "delete";
+    return;
+  }
+  confirmedTopicAction.value = null;
   deletingTopic.value = true;
   loadError.value = "";
   try {
@@ -202,11 +229,6 @@ async function removeTopic() {
     const keeping = plan.groupsKept.length
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
-    const confirmed = window.confirm(
-      `确定删除 Topic “${topic.value}”吗？Topic 删除后无法恢复，Kafka 会异步完成删除。${deleting}${keeping}`,
-    );
-    if (!confirmed) return;
-
     const result = await deleteTopic(topic.value, connection.form);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
@@ -235,6 +257,11 @@ async function removeTopic() {
 
 async function recreateCurrentTopic() {
   if (recreatingTopic.value || deletingTopic.value) return;
+  if (confirmedTopicAction.value !== "recreate") {
+    pendingTopicAction.value = "recreate";
+    return;
+  }
+  confirmedTopicAction.value = null;
   recreatingTopic.value = true;
   loadError.value = "";
   try {
@@ -245,8 +272,6 @@ async function recreateCurrentTopic() {
     const keeping = plan.groupsKept.length
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
-    if (!window.confirm(`确定删除并重建 Topic “${topic.value}”吗？所有消息将被清空；新 Topic 会保留原分区数和副本数。${deleting}${keeping}`)) return;
-
     const result = await recreateTopic(topic.value, connection.form);
     window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
     if (result.failedGroupDeletions?.length) {
@@ -283,9 +308,11 @@ async function produceMessage() {
   produceError.value = "";
   try {
     const result = await produceTopicMessage(topic.value, connection.form, messageKey.value, messageValue.value);
-    produceSuccess.value = `已写入分区 ${result.partition}，Offset ${result.offset}`;
+    produceSuccess.value = `发送成功：已写入分区 ${result.partition}，Offset ${result.offset}`;
     messageKey.value = "";
     messageValue.value = "";
+    // Kafka 已确认写入后立刻结束按钮的“保存中”状态；后续刷新不应让用户误以为写入还未完成。
+    producing.value = false;
     await Promise.all([search(), loadTopicHealth()]);
   } catch (reason) {
     produceError.value = reason instanceof Error ? reason.message : "消息写入失败";
@@ -345,7 +372,10 @@ async function search() {
     const response = await searchTopicMessages(topic.value, connection.form, {
       fromTime: normalizedFromTime,
       toTime: normalizedToTime,
-      keyword: keyword.value.trim(),
+      conditions: conditions.value
+        .map(({ value }) => ({ field: "value" as const, value: value.trim() }))
+        .filter((condition) => condition.value),
+      matchAny: matchAny.value,
       limit: limit.value,
       scanLimit: scanLimit.value,
     });
@@ -367,7 +397,8 @@ function resetSearch() {
   fromClock.value = "";
   toDate.value = "";
   toClock.value = "";
-  keyword.value = "";
+  conditions.value = [{ id: nextConditionId++, value: "" }];
+  matchAny.value = false;
   limit.value = 20;
   scanLimit.value = 10000;
   search();
@@ -428,7 +459,7 @@ onMounted(() => {
       <div class="topic-header-actions">
         <button class="topic-produce-button" type="button" :disabled="deletingTopic" @click="openProduceForm">添加数据</button>
         <button class="topic-recreate-button" type="button" :disabled="deletingTopic || recreatingTopic" @click="recreateCurrentTopic">
-          {{ recreatingTopic ? "重建中…" : "删除并重建" }}
+          {{ recreatingTopic ? "重建中…" : "清空并重建" }}
         </button>
         <button class="topic-delete-button" type="button" :disabled="deletingTopic" @click="removeTopic">
           {{ deletingTopic ? "删除中…" : "删除 Topic" }}
@@ -450,7 +481,7 @@ onMounted(() => {
         <textarea v-model="messageValue" rows="6" required placeholder="输入文本或 JSON 数据" />
       </label>
       <p v-if="produceError" class="produce-feedback error">{{ produceError }}</p>
-      <p v-if="produceSuccess" class="produce-feedback success">{{ produceSuccess }}</p>
+      <p v-if="produceSuccess" class="produce-feedback success"><strong>✓ {{ produceSuccess }}</strong><span>消息已由 Kafka 确认接收。</span></p>
       <div class="produce-actions"><button class="topic-produce-button" type="submit" :disabled="producing">{{ producing ? "保存中…" : "保存并发送" }}</button></div>
     </form>
 
@@ -543,87 +574,44 @@ onMounted(() => {
     </div>
 
     <form class="message-search-card" @submit.prevent="search">
-      <label class="content-search">
-        <span>内容或 Key</span>
-        <div class="search-box wide">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
-          <input v-model="keyword" placeholder="输入关键字，匹配消息 Key 或内容" />
-        </div>
-      </label>
-      <label class="datetime-label">
-        <span>开始时间</span>
-        <div class="datetime-fields">
-          <input
-            v-model="fromDate"
-            class="date-entry"
-            type="date"
-            name="message-search-from-date"
-            autocomplete="off"
-            lang="en-CA"
-            aria-label="开始日期"
-            @focus="activateStartTime"
-            @change="closeNativePicker"
-          />
-          <input
-            v-model="fromClock"
-            class="clock-entry"
-            type="time"
-            name="message-search-from-clock"
-            step="60"
-            aria-label="开始时分"
-            @focus="activateStartTime"
-            @change="closeNativePicker"
-          />
-        </div>
-      </label>
-      <label class="datetime-label end-datetime-label">
-        <span>结束时间</span>
-        <div class="datetime-fields">
-          <input
-            v-model="toDate"
-            class="date-entry"
-            type="date"
-            name="message-search-to-date"
-            autocomplete="off"
-            lang="en-CA"
-            aria-label="结束日期"
-            @focus="activateEndTime"
-            @change="closeNativePicker"
-          />
-          <input
-            v-model="toClock"
-            class="clock-entry"
-            type="time"
-            name="message-search-to-clock"
-            step="60"
-            aria-label="结束时分"
-            @focus="activateEndTime"
-            @change="closeNativePicker"
-          />
-        </div>
-      </label>
-      <label>
-        <span>最多返回</span>
-        <select v-model.number="limit">
-          <option :value="20">20 条</option>
-          <option :value="100">100 条</option>
-          <option :value="1000">1,000 条</option>
-          <option :value="10000">10,000 条</option>
+      <div class="search-conditions-heading">
+        <div><strong>检索条件</strong><small>同一条消息需满足以下条件</small></div>
+        <select v-model="matchAny" aria-label="条件匹配方式">
+          <option :value="false">同时满足所有条件</option>
+          <option :value="true">满足任意一个条件</option>
         </select>
-      </label>
-      <label>
-        <span>最大查询条数（1～100万）</span>
-        <input
-          v-model.number="scanLimit"
-          type="number"
-          min="1"
-          max="1000000"
-          step="1"
-          inputmode="numeric"
-          required
-          placeholder="默认 10000，最多 1000000"
-        />
-      </label>
+      </div>
+      <div class="search-conditions">
+        <div v-for="(condition, index) in conditions" :key="condition.id" class="search-condition-row">
+          <span class="condition-joiner" :class="{ muted: index === 0 }">{{ index === 0 ? '当' : (matchAny ? '或' : '且') }}</span>
+          <input v-model="condition.value" placeholder="输入要包含的文字，例如 D2_IP_202609221130_two_4" />
+          <button type="button" class="remove-condition-button" :aria-label="`删除第 ${index + 1} 条条件`" @click="removeSearchCondition(condition.id)">×</button>
+        </div>
+      </div>
+      <button type="button" class="add-condition-button" @click="addSearchCondition">＋ 添加条件</button>
+
+      <div class="search-options-row">
+        <label class="datetime-label">
+          <span>开始时间（可选）</span>
+          <div class="datetime-fields">
+            <input v-model="fromDate" class="date-entry" type="date" name="message-search-from-date" autocomplete="off" lang="en-CA" aria-label="开始日期" @focus="activateStartTime" @change="closeNativePicker" />
+            <input v-model="fromClock" class="clock-entry" type="time" name="message-search-from-clock" step="60" aria-label="开始时分" @focus="activateStartTime" @change="closeNativePicker" />
+          </div>
+        </label>
+        <label class="datetime-label">
+          <span>结束时间（可选）</span>
+          <div class="datetime-fields">
+            <input v-model="toDate" class="date-entry" type="date" name="message-search-to-date" autocomplete="off" lang="en-CA" aria-label="结束日期" @focus="activateEndTime" @change="closeNativePicker" />
+            <input v-model="toClock" class="clock-entry" type="time" name="message-search-to-clock" step="60" aria-label="结束时分" @focus="activateEndTime" @change="closeNativePicker" />
+          </div>
+        </label>
+        <button type="button" class="advanced-search-toggle" @click="advancedSearchOpen = !advancedSearchOpen">{{ advancedSearchOpen ? '收起高级设置' : '高级设置' }}</button>
+      </div>
+      <div v-if="advancedSearchOpen" class="advanced-search-options">
+        <label><span>显示前 N 条命中结果</span><select v-model.number="limit"><option :value="20">20 条</option><option :value="100">100 条</option><option :value="1000">1,000 条</option><option :value="10000">10,000 条</option></select></label>
+        <label><span>最多扫描 N 条消息</span><input v-model.number="scanLimit" type="number" min="1" max="1000000" step="1" inputmode="numeric" required /></label>
+        <small>扫描越多，命中率越高，但耗时也会增加。</small>
+      </div>
       <div class="message-search-actions">
         <button type="button" class="export-button" :disabled="loading || !messages.length" @click="exportMessages">
           导出结果
@@ -703,6 +691,18 @@ onMounted(() => {
         <strong>正在读取 Kafka 消息</strong>
         <p>内容搜索需要顺序扫描消息，较大的时间范围可能需要几秒钟。</p>
       </div>
+    </div>
+
+    <div v-if="pendingTopicAction" class="app-dialog-backdrop" role="presentation" @click.self="pendingTopicAction = null">
+      <section class="app-dialog" role="alertdialog" aria-modal="true" aria-labelledby="topic-action-title">
+        <span class="app-dialog-kicker">高风险操作</span>
+        <h2 id="topic-action-title">{{ pendingTopicAction === 'recreate' ? '清空并重建这个 Topic？' : '永久删除这个 Topic？' }}</h2>
+        <p>{{ pendingTopicAction === 'recreate' ? '全部消息会被清空，并按原分区数、副本数和自定义配置重建。专属消费组也会被删除。' : 'Topic、全部消息和专属消费组会被永久删除，无法恢复。' }}</p>
+        <div class="app-dialog-actions">
+          <button type="button" class="app-dialog-cancel" @click="pendingTopicAction = null">取消</button>
+          <button type="button" class="app-dialog-danger" @click="confirmedTopicAction = pendingTopicAction; pendingTopicAction = null; confirmedTopicAction === 'delete' ? removeTopic() : recreateCurrentTopic()">{{ pendingTopicAction === 'recreate' ? '确认清空并重建' : '确认永久删除' }}</button>
+        </div>
+      </section>
     </div>
   </section>
 </template>

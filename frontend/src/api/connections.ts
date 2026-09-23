@@ -193,9 +193,16 @@ export interface ProducedMessage {
 export interface MessageSearch {
   fromTime: string;
   toTime: string;
-  keyword: string;
+  keyword?: string;
+  conditions?: MessageSearchCondition[];
+  matchAny?: boolean;
   limit: number;
   scanLimit: number;
+}
+
+export interface MessageSearchCondition {
+  field: "value" | "key" | "any";
+  value: string;
 }
 
 export interface MetricSnapshot {
