@@ -38,8 +38,8 @@ func NormalizeMessageSearch(req *MessageSearchRequest) (time.Time, time.Time, er
 	if req.Limit == 0 {
 		req.Limit = 20
 	}
-	if req.Limit < 1 || req.Limit > 10000 {
-		return time.Time{}, time.Time{}, errors.New("返回数量必须在 1 到 10,000 之间")
+	if req.Limit < 1 || req.Limit > 100000 {
+		return time.Time{}, time.Time{}, errors.New("返回数量必须在 1 到 100,000 之间")
 	}
 	if req.ScanLimit == 0 {
 		req.ScanLimit = 10000

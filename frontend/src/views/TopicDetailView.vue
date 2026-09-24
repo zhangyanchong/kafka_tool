@@ -413,7 +413,7 @@ async function exportMessages() {
   if (!messages.value.length) return;
   const exportedAt = new Date();
   const jsonLines = messages.value
-    .map((message) => JSON.stringify({ topic: topic.value, ...message }))
+    .map((message) => message.value)
     .join("\n") + "\n";
   const safeTopic = topic.value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "topic";
   const timestamp = exportedAt.toISOString().replace(/[:.]/g, "-");
@@ -421,7 +421,10 @@ async function exportMessages() {
   const nativeExport = window.go?.main?.App?.ExportFile;
   if (nativeExport) {
     try {
-      await nativeExport(filename, jsonLines);
+      await Promise.race([
+        nativeExport(filename, jsonLines),
+        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("导出结果超时（最长 20 分钟）")), 20 * 60 * 1000)),
+      ]);
     } catch (reason) {
       loadError.value = reason instanceof Error ? reason.message : "导出文件失败";
     }
@@ -613,7 +616,7 @@ onMounted(() => {
         <button type="button" class="advanced-search-toggle" @click="advancedSearchOpen = !advancedSearchOpen">{{ advancedSearchOpen ? '收起高级设置' : '高级设置' }}</button>
       </div>
       <div v-if="advancedSearchOpen" class="advanced-search-options">
-        <label><span>显示前 N 条命中结果</span><select v-model.number="limit"><option :value="20">20 条</option><option :value="100">100 条</option><option :value="1000">1,000 条</option><option :value="10000">10,000 条</option></select></label>
+        <label><span>显示前 N 条命中结果</span><select v-model.number="limit"><option :value="20">20 条</option><option :value="100">100 条</option><option :value="1000">1,000 条</option><option :value="10000">10,000 条</option><option :value="100000">100,000 条</option></select></label>
         <label><span>最多扫描 N 条消息</span><input v-model.number="scanLimit" type="number" min="1" max="1000000" step="1" inputmode="numeric" required /></label>
         <small>扫描越多，命中率越高，但耗时也会增加。</small>
       </div>

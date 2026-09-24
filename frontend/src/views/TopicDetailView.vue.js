@@ -373,7 +373,7 @@ async function exportMessages() {
         return;
     const exportedAt = new Date();
     const jsonLines = messages.value
-        .map((message) => JSON.stringify({ topic: topic.value, ...message }))
+        .map((message) => message.value)
         .join("\n") + "\n";
     const safeTopic = topic.value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "topic";
     const timestamp = exportedAt.toISOString().replace(/[:.]/g, "-");
@@ -381,7 +381,10 @@ async function exportMessages() {
     const nativeExport = window.go?.main?.App?.ExportFile;
     if (nativeExport) {
         try {
-            await nativeExport(filename, jsonLines);
+            await Promise.race([
+                nativeExport(filename, jsonLines),
+                new Promise((_, reject) => window.setTimeout(() => reject(new Error("导出结果超时（最长 20 分钟）")), 20 * 60 * 1000)),
+            ]);
         }
         catch (reason) {
             loadError.value = reason instanceof Error ? reason.message : "导出文件失败";
@@ -932,6 +935,9 @@ if (__VLS_ctx.advancedSearchOpen) {
     });
     __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
         value: (10000),
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: (100000),
     });
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
