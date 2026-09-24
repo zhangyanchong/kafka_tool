@@ -462,22 +462,6 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     disabled: (__VLS_ctx.deletingTopic),
 });
 /** @type {__VLS_StyleScopedClasses['topic-produce-button']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.recreateCurrentTopic) },
-    ...{ class: "topic-recreate-button" },
-    type: "button",
-    disabled: (__VLS_ctx.deletingTopic || __VLS_ctx.recreatingTopic),
-});
-/** @type {__VLS_StyleScopedClasses['topic-recreate-button']} */ ;
-(__VLS_ctx.recreatingTopic ? "重建中…" : "清空并重建");
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    ...{ onClick: (__VLS_ctx.removeTopic) },
-    ...{ class: "topic-delete-button" },
-    type: "button",
-    disabled: (__VLS_ctx.deletingTopic),
-});
-/** @type {__VLS_StyleScopedClasses['topic-delete-button']} */ ;
-(__VLS_ctx.deletingTopic ? "删除中…" : "删除 Topic");
 if (__VLS_ctx.showProduceForm) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
         ...{ onSubmit: (__VLS_ctx.produceMessage) },
@@ -498,7 +482,7 @@ if (__VLS_ctx.showProduceForm) {
                     throw 0;
                 return (__VLS_ctx.showProduceForm = false);
                 // @ts-ignore
-                [topic, topic, openProduceForm, deletingTopic, deletingTopic, deletingTopic, deletingTopic, recreateCurrentTopic, recreatingTopic, recreatingTopic, removeTopic, showProduceForm, showProduceForm, produceMessage,];
+                [topic, topic, openProduceForm, deletingTopic, showProduceForm, showProduceForm, produceMessage,];
             } },
         type: "button",
         disabled: (__VLS_ctx.producing),
@@ -1203,7 +1187,7 @@ if (__VLS_ctx.pendingTopicAction) {
                 __VLS_ctx.pendingTopicAction = null;
                 __VLS_ctx.confirmedTopicAction === 'delete' ? __VLS_ctx.removeTopic() : __VLS_ctx.recreateCurrentTopic();
                 // @ts-ignore
-                [recreateCurrentTopic, removeTopic, pendingTopicAction, pendingTopicAction, confirmedTopicAction, confirmedTopicAction,];
+                [pendingTopicAction, pendingTopicAction, confirmedTopicAction, confirmedTopicAction, removeTopic, recreateCurrentTopic,];
             } },
         type: "button",
         ...{ class: "app-dialog-danger" },

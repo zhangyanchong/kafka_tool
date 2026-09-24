@@ -466,12 +466,6 @@ onMounted(() => {
       </div>
       <div class="topic-header-actions">
         <button class="topic-produce-button" type="button" :disabled="deletingTopic" @click="openProduceForm">添加数据</button>
-        <button class="topic-recreate-button" type="button" :disabled="deletingTopic || recreatingTopic" @click="recreateCurrentTopic">
-          {{ recreatingTopic ? "重建中…" : "清空并重建" }}
-        </button>
-        <button class="topic-delete-button" type="button" :disabled="deletingTopic" @click="removeTopic">
-          {{ deletingTopic ? "删除中…" : "删除 Topic" }}
-        </button>
       </div>
     </div>
 
