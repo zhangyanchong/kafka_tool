@@ -207,8 +207,8 @@ func (h *Handler) SearchTopicMessages(w http.ResponseWriter, r *http.Request) {
 func messageSearchTimeout(connectionTimeout time.Duration, scanLimit int) time.Duration {
 	minutes := (scanLimit + 99999) / 100000
 	minimum := time.Duration(minutes) * time.Minute
-	if minimum < 5*time.Minute {
-		minimum = 5 * time.Minute
+	if minimum < 10*time.Minute {
+		minimum = 10 * time.Minute
 	}
 	if connectionTimeout > minimum {
 		return connectionTimeout
