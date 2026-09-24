@@ -20,6 +20,8 @@ const matchAny = ref(false);
 const advancedSearchOpen = ref(false);
 let nextConditionId = 2;
 const loading = ref(false);
+const exporting = ref(false);
+const exportProgress = ref(0);
 const loadError = ref("");
 const scanned = ref(0);
 const truncated = ref(false);
@@ -380,29 +382,41 @@ function resetSearch() {
     search();
 }
 async function exportMessages() {
-    if (!messages.value.length)
+    if (!messages.value.length || exporting.value)
         return;
     const exportedAt = new Date();
-    const jsonLines = messages.value
-        .map((message) => message.value)
-        .join("\n") + "\n";
     const safeTopic = topic.value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "topic";
     const timestamp = exportedAt.toISOString().replace(/[:.]/g, "-");
     const filename = `${safeTopic}-${timestamp}.jsonl`;
-    const nativeExport = window.go?.main?.App?.ExportFile;
-    if (nativeExport) {
+    const nativeExport = window.go?.main?.App;
+    if (nativeExport?.BeginMessageExport && nativeExport.AppendMessageExport && nativeExport.FinishMessageExport) {
+        exporting.value = true;
+        exportProgress.value = 0;
+        let exportID = "";
         try {
-            await Promise.race([
-                nativeExport(filename, jsonLines),
-                new Promise((_, reject) => window.setTimeout(() => reject(new Error("导出结果超时（最长 20 分钟）")), 20 * 60 * 1000)),
-            ]);
+            exportID = await nativeExport.BeginMessageExport(filename);
+            if (!exportID)
+                return;
+            for (let index = 0; index < messages.value.length; index += 1) {
+                await nativeExport.AppendMessageExport(exportID, messages.value[index].value);
+                exportProgress.value = index + 1;
+                if (index % 5 === 4)
+                    await new Promise((resolve) => window.setTimeout(resolve, 0));
+            }
+            await nativeExport.FinishMessageExport(exportID);
+            exportID = "";
         }
         catch (reason) {
+            if (exportID)
+                await nativeExport.CancelMessageExport?.(exportID);
             loadError.value = reason instanceof Error ? reason.message : "导出文件失败";
+        }
+        finally {
+            exporting.value = false;
         }
         return;
     }
-    const blob = new Blob([jsonLines], {
+    const blob = new Blob(messages.value.flatMap((message) => [message.value, "\n"]), {
         type: "application/x-ndjson;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -955,20 +969,21 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (__VLS_ctx.exportMessages) },
     type: "button",
     ...{ class: "export-button" },
-    disabled: (__VLS_ctx.loading || !__VLS_ctx.messages.length),
+    disabled: (__VLS_ctx.loading || __VLS_ctx.exporting || !__VLS_ctx.messages.length),
 });
 /** @type {__VLS_StyleScopedClasses['export-button']} */ ;
+(__VLS_ctx.exporting ? `正在导出 ${__VLS_ctx.exportProgress} / ${__VLS_ctx.messages.length}` : "导出结果");
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (__VLS_ctx.resetSearch) },
     type: "button",
     ...{ class: "clear-button" },
-    disabled: (__VLS_ctx.loading),
+    disabled: (__VLS_ctx.loading || __VLS_ctx.exporting),
 });
 /** @type {__VLS_StyleScopedClasses['clear-button']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     type: "submit",
     ...{ class: "search-button" },
-    disabled: (__VLS_ctx.loading),
+    disabled: (__VLS_ctx.loading || __VLS_ctx.exporting),
 });
 /** @type {__VLS_StyleScopedClasses['search-button']} */ ;
 (__VLS_ctx.loading ? "搜索中…" : "搜索消息");
@@ -1015,7 +1030,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [advancedSearchOpen, advancedSearchOpen, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, messages, messages, messages, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [advancedSearchOpen, advancedSearchOpen, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, exporting, exporting, exporting, exporting, messages, messages, messages, messages, exportProgress, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },

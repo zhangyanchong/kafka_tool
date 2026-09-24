@@ -27,7 +27,10 @@ declare global {
     go?: {
       main?: {
         App?: {
-          ExportFile?: (defaultFilename: string, content: string) => Promise<boolean>;
+          BeginMessageExport?: (defaultFilename: string) => Promise<string>;
+          AppendMessageExport?: (id: string, content: string) => Promise<void>;
+          FinishMessageExport?: (id: string) => Promise<void>;
+          CancelMessageExport?: (id: string) => Promise<void>;
         };
       };
     };
@@ -50,6 +53,8 @@ const matchAny = ref(false);
 const advancedSearchOpen = ref(false);
 let nextConditionId = 2;
 const loading = ref(false);
+const exporting = ref(false);
+const exportProgress = ref(0);
 const loadError = ref("");
 const scanned = ref(0);
 const truncated = ref(false);
@@ -421,28 +426,36 @@ function resetSearch() {
 }
 
 async function exportMessages() {
-  if (!messages.value.length) return;
+  if (!messages.value.length || exporting.value) return;
   const exportedAt = new Date();
-  const jsonLines = messages.value
-    .map((message) => message.value)
-    .join("\n") + "\n";
   const safeTopic = topic.value.replace(/[^a-zA-Z0-9._-]+/g, "_") || "topic";
   const timestamp = exportedAt.toISOString().replace(/[:.]/g, "-");
   const filename = `${safeTopic}-${timestamp}.jsonl`;
-  const nativeExport = window.go?.main?.App?.ExportFile;
-  if (nativeExport) {
+  const nativeExport = window.go?.main?.App;
+  if (nativeExport?.BeginMessageExport && nativeExport.AppendMessageExport && nativeExport.FinishMessageExport) {
+    exporting.value = true;
+    exportProgress.value = 0;
+    let exportID = "";
     try {
-      await Promise.race([
-        nativeExport(filename, jsonLines),
-        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("导出结果超时（最长 20 分钟）")), 20 * 60 * 1000)),
-      ]);
+      exportID = await nativeExport.BeginMessageExport(filename);
+      if (!exportID) return;
+      for (let index = 0; index < messages.value.length; index += 1) {
+        await nativeExport.AppendMessageExport(exportID, messages.value[index].value);
+        exportProgress.value = index + 1;
+        if (index % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      }
+      await nativeExport.FinishMessageExport(exportID);
+      exportID = "";
     } catch (reason) {
+      if (exportID) await nativeExport.CancelMessageExport?.(exportID);
       loadError.value = reason instanceof Error ? reason.message : "导出文件失败";
+    } finally {
+      exporting.value = false;
     }
     return;
   }
 
-  const blob = new Blob([jsonLines], {
+  const blob = new Blob(messages.value.flatMap((message) => [message.value, "\n"]), {
     type: "application/x-ndjson;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
@@ -626,11 +639,11 @@ onMounted(() => {
         <small>扫描越多，命中率越高，但耗时也会增加。</small>
       </div>
       <div class="message-search-actions">
-        <button type="button" class="export-button" :disabled="loading || !messages.length" @click="exportMessages">
-          导出结果
+        <button type="button" class="export-button" :disabled="loading || exporting || !messages.length" @click="exportMessages">
+          {{ exporting ? `正在导出 ${exportProgress} / ${messages.length}` : "导出结果" }}
         </button>
-        <button type="button" class="clear-button" :disabled="loading" @click="resetSearch">重置</button>
-        <button type="submit" class="search-button" :disabled="loading">
+        <button type="button" class="clear-button" :disabled="loading || exporting" @click="resetSearch">重置</button>
+        <button type="submit" class="search-button" :disabled="loading || exporting">
           {{ loading ? "搜索中…" : "搜索消息" }}
         </button>
       </div>
