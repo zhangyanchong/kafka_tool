@@ -134,7 +134,18 @@ function removeSearchCondition(id) {
 }
 function formatTime(value) {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
+    return Number.isNaN(date.getTime())
+        ? value
+        : date.toLocaleString("zh-CN", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            fractionalSecondDigits: 3,
+            hour12: false,
+        });
 }
 function formatBytes(bytes) {
     if (bytes < 1024)

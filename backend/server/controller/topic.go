@@ -190,12 +190,7 @@ func (h *Handler) SearchTopicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer client.Close()
-	// 内容检索可能需要顺序读取多个分区。即使旧连接保存的是较短的
-	// 建连超时，也给予检索至少一分钟，避免返回不完整的结果。
-	searchTimeout := timeout
-	if searchTimeout < time.Minute {
-		searchTimeout = time.Minute
-	}
+	searchTimeout := messageSearchTimeout(timeout, req.ScanLimit)
 	ctx, cancel := context.WithTimeout(r.Context(), searchTimeout)
 	defer cancel()
 	response, err := logic.FindMessages(ctx, client, topic, req, fromTime, toTime)
@@ -204,4 +199,19 @@ func (h *Handler) SearchTopicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// messageSearchTimeout gives larger scans enough time to finish all assigned
+// partitions before returning a timeout. A configured connection timeout can
+// still extend this value.
+func messageSearchTimeout(connectionTimeout time.Duration, scanLimit int) time.Duration {
+	minutes := (scanLimit + 99999) / 100000
+	minimum := time.Duration(minutes) * time.Minute
+	if minimum < 5*time.Minute {
+		minimum = 5 * time.Minute
+	}
+	if connectionTimeout > minimum {
+		return connectionTimeout
+	}
+	return minimum
 }

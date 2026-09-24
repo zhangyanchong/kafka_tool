@@ -4,9 +4,42 @@ import (
 	"errors"
 	"testing"
 
+	"kafka-tool/backend/server/model"
+
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
+
+func TestSortMessageItemsByTimeDescUsesActualTimestamp(t *testing.T) {
+	items := []model.MessageItem{
+		{Partition: 0, Offset: 1, Timestamp: "2026-09-24T14:39:42Z"},
+		{Partition: 0, Offset: 2, Timestamp: "2026-09-24T14:39:42.9Z"},
+		{Partition: 1, Offset: 3, Timestamp: "2026-09-24T14:39:43Z"},
+	}
+
+	sortMessageItemsByTimeDesc(items)
+
+	want := []int64{3, 2, 1}
+	for index, offset := range want {
+		if items[index].Offset != offset {
+			t.Fatalf("items[%d].Offset = %d, want %d", index, items[index].Offset, offset)
+		}
+	}
+}
+
+func TestTailScanQuotaDistributesTheTotalScanLimit(t *testing.T) {
+	var total int
+	for index := range 10 {
+		quota := tailScanQuota(10000, 10, index)
+		if quota != 1000 {
+			t.Fatalf("partition %d quota = %d, want 1000", index, quota)
+		}
+		total += quota
+	}
+	if total != 10000 {
+		t.Fatalf("total quota = %d, want 10000", total)
+	}
+}
 
 func TestTopicItemFromMetadataReportsHealthyTopic(t *testing.T) {
 	name := "orders"

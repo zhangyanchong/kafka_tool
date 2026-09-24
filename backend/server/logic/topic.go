@@ -470,24 +470,30 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	if partitionCount == 0 {
 		return emptyMessageSearchResponse(estimatedMessages), nil
 	}
-	perPartitionWindow := int64(req.Limit)
-	if hasMessageSearchFilter(req) {
-		perPartitionWindow = tools.MaxInt64(perPartitionWindow, int64((req.ScanLimit+partitionCount-1)/partitionCount))
-	}
 	assignments := make(map[string]map[int32]kgo.Offset)
 	endBounds := make(map[int32]int64)
-	for partition, end := range endOffsets[topic] {
+	partitions := make([]int32, 0, partitionCount)
+	for partition := range endOffsets[topic] {
+		partitions = append(partitions, partition)
+	}
+	sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] })
+	for index, partition := range partitions {
+		end := endOffsets[topic][partition]
 		start, ok := fromOffsets.Lookup(topic, partition)
 		if !ok || start.Err != nil || end.Err != nil {
 			continue
 		}
+		partitionWindow := int64(tailScanQuota(req.ScanLimit, partitionCount, index))
 		startAt := start.Offset
 		endAt := end.Offset
 		if boundedEnd, ok := toOffsets.Lookup(topic, partition); ok && boundedEnd.Err == nil {
 			endAt = tools.MinInt64(endAt, boundedEnd.Offset)
 		}
-		if fromTime.IsZero() && endAt-startAt > perPartitionWindow {
-			startAt = endAt - perPartitionWindow
+		// Every search, with or without conditions, reads the same-sized tail
+		// window from each partition. This keeps the total scan budget bounded
+		// and prevents a busy partition from consuming the whole budget.
+		if endAt-startAt > partitionWindow {
+			startAt = endAt - partitionWindow
 		}
 		if startAt >= endAt {
 			continue
@@ -507,7 +513,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	if err != nil {
 		return model.MessageSearchResponse{}, err
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Timestamp > items[j].Timestamp })
+	sortMessageItemsByTimeDesc(items)
 	if len(items) > req.Limit {
 		items = items[:req.Limit]
 	}
@@ -515,6 +521,41 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 		Topic: topic, Items: items, Total: len(items), Scanned: scanned, Truncated: truncated,
 		EstimatedMessages: estimatedMessages,
 	}, nil
+}
+
+func tailScanQuota(total, partitionCount, partitionIndex int) int {
+	if total <= 0 || partitionCount <= 0 || partitionIndex < 0 || partitionIndex >= partitionCount {
+		return 0
+	}
+	quota := total / partitionCount
+	if partitionIndex < total%partitionCount {
+		quota++
+	}
+	return quota
+}
+
+// sortMessageItemsByTimeDesc keeps the search result newest-first across all
+// partitions. RFC3339Nano omits trailing fractional-second zeroes, so its text
+// representation is not safe to compare lexicographically.
+func sortMessageItemsByTimeDesc(items []model.MessageItem) {
+	sort.Slice(items, func(i, j int) bool {
+		leftTime, leftErr := time.Parse(time.RFC3339Nano, items[i].Timestamp)
+		rightTime, rightErr := time.Parse(time.RFC3339Nano, items[j].Timestamp)
+		if leftErr == nil && rightErr == nil && !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		if leftErr != nil || rightErr != nil {
+			// The API normally always supplies RFC3339 timestamps. Keep a
+			// deterministic newest-looking fallback if a malformed value occurs.
+			if items[i].Timestamp != items[j].Timestamp {
+				return items[i].Timestamp > items[j].Timestamp
+			}
+		}
+		if items[i].Partition != items[j].Partition {
+			return items[i].Partition < items[j].Partition
+		}
+		return items[i].Offset > items[j].Offset
+	})
 }
 
 func estimatedTopicMessages(topic string, startOffsets, endOffsets kadm.ListedOffsets) *int64 {
@@ -575,10 +616,6 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 		})
 	}
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
-}
-
-func hasMessageSearchFilter(req model.MessageSearchRequest) bool {
-	return strings.TrimSpace(req.Keyword) != "" || len(req.Conditions) > 0
 }
 
 func matchesMessageSearch(req model.MessageSearchRequest, key, value string) bool {
