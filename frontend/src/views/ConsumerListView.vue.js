@@ -2,6 +2,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
 import { deleteConsumer, listConsumers } from "@/api/connections";
+import { confirmDialog } from "@/dialog";
 import { useConnectionStore } from "@/stores/connection";
 const keyword = ref("");
 const statusFilter = ref("all");
@@ -88,7 +89,7 @@ function openConsumer(groupId) {
     router.push({ name: "consumer-detail", params: { groupId } });
 }
 async function removeConsumer(groupId) {
-    const confirmed = window.confirm(`确定删除消费组“${groupId}”吗？这会删除该组的消费进度，且无法恢复。其他消费组不会受到影响。`);
+    const confirmed = await confirmDialog("删除消费组？", `确定删除消费组“${groupId}”吗？这会删除该组的消费进度，且无法恢复。其他消费组不会受到影响。`, "确认删除", true);
     if (!confirmed)
         return;
     deletingGroupId.value = groupId;

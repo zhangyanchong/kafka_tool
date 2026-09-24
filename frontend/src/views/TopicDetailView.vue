@@ -15,6 +15,7 @@ import {
 } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
+import { alertDialog, confirmDialog } from "@/dialog";
 
 interface SearchCondition {
   id: number;
@@ -232,15 +233,19 @@ async function removeTopic() {
     const result = await deleteTopic(topic.value, connection.form);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
-      const retry = window.confirm(
+      const retry = await confirmDialog(
+        "部分消费组未删除",
         `${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`,
+        "立即再试",
+        true,
       );
       if (retry) {
         const retries = await Promise.allSettled(
           failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)),
         );
         const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
-        window.alert(
+        await alertDialog(
+          "消费组删除结果",
           stillFailed.length
             ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}`
             : "已完成消费组的再次删除。",
@@ -273,13 +278,13 @@ async function recreateCurrentTopic() {
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
     const result = await recreateTopic(topic.value, connection.form);
-    window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
+    await alertDialog("Topic 已重建", `${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
-      if (window.confirm(`以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`)) {
+      if (await confirmDialog("部分消费组未删除", `以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`, "立即再试", true)) {
         const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
         const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
-        window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+        await alertDialog("消费组删除结果", stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
       }
     }
     await Promise.all([search(), loadTopicHealth()]);
@@ -302,7 +307,7 @@ async function produceMessage() {
     produceError.value = "消息内容不能为空";
     return;
   }
-  if (!window.confirm(`确认向 Topic “${topic.value}”写入这条消息吗？写入后无法撤销。`)) return;
+  if (!await confirmDialog("确认写入消息？", `确认向 Topic “${topic.value}”写入这条消息吗？写入后无法撤销。`, "确认写入")) return;
 
   producing.value = true;
   produceError.value = "";

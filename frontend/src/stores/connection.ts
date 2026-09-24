@@ -22,7 +22,7 @@ const defaults: ConnectionPayload = {
   username: "",
   password: "",
   tlsSkipVerify: false,
-  connectionTimeoutSeconds: 10,
+	connectionTimeoutSeconds: 60,
   sshEnabled: false,
   sshAddress: "",
   sshUsername: "",

@@ -93,10 +93,10 @@ async function removeTopic(topic: string) {
     const result = await deleteTopic(topic, connection.form);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
-      if (window.confirm(`${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`)) {
+      if (await confirmDialog("部分消费组未删除", `${result.message}\n未删除的消费组：${failedGroups.join("、")}\n\n这通常表示消费者仍在线并重新加入了消费组。是否立即再删除一次？`, "立即再试", true)) {
         const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
         const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
-        window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+        await alertDialog("消费组删除结果", stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
       }
     }
     topics.value = topics.value.filter((item) => item.name !== topic);
@@ -125,13 +125,13 @@ async function recreateCurrentTopic(topic: string) {
       ? `\n\n以下 ${plan.groupsKept.length} 个消费组还消费其他 Topic，将保留：\n${plan.groupsKept.map((group) => `- ${group.groupId}（${group.topics.join("、")}）`).join("\n")}`
       : "";
     const result = await recreateTopic(topic, connection.form);
-    window.alert(`${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
+    await alertDialog("Topic 已重建", `${result.message}\n分区数：${result.partitions}；副本数：${result.replicationFactor}`);
     if (result.failedGroupDeletions?.length) {
       const failedGroups = result.failedGroupDeletions;
-      if (window.confirm(`以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`)) {
+      if (await confirmDialog("部分消费组未删除", `以下消费组未删除，可能仍有客户端在线：${failedGroups.join("、")}\n\n是否立即再删除一次？`, "立即再试", true)) {
         const retries = await Promise.allSettled(failedGroups.map((groupId) => deleteConsumer(groupId, connection.form)));
         const stillFailed = failedGroups.filter((_, index) => retries[index].status === "rejected");
-        window.alert(stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
+        await alertDialog("消费组删除结果", stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
       }
     }
     await loadTopics();

@@ -540,18 +540,19 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 	scanned := 0
 	for scanned < req.ScanLimit && len(done) < len(endBounds) {
 		fetches := client.PollRecords(ctx, tools.MinInt(req.Limit*4, 500))
-		if fetches.IsClientClosed() || ctx.Err() != nil {
-			break
+		if ctx.Err() != nil {
+			return nil, 0, false, fmt.Errorf("读取消息超时：已扫描 %d 条，但尚未读完全部分区；请提高连接超时时间后重试", scanned)
+		}
+		if fetches.IsClientClosed() {
+			return nil, 0, false, errors.New("Kafka 客户端在读取消息时已关闭")
 		}
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return nil, 0, false, fmt.Errorf("读取消息失败：%s", FriendlyKafkaError(errs[0].Err))
 		}
-		recordCount := 0
 		fetches.EachRecord(func(record *kgo.Record) {
 			if scanned >= req.ScanLimit {
 				return
 			}
-			recordCount++
 			endAt, tracked := endBounds[record.Partition]
 			if !tracked || record.Offset >= endAt {
 				done[record.Partition] = true
@@ -572,9 +573,6 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 				Key:       key, Value: value, Size: len(record.Key) + len(record.Value),
 			})
 		})
-		if recordCount == 0 {
-			break
-		}
 	}
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
 }

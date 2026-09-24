@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppPagination from "@/components/AppPagination.vue";
 import { deleteConsumer, listConsumers, type KafkaConsumer } from "@/api/connections";
+import { confirmDialog } from "@/dialog";
 import { useConnectionStore } from "@/stores/connection";
 
 const keyword = ref("");
@@ -96,8 +97,11 @@ function openConsumer(groupId: string) {
 }
 
 async function removeConsumer(groupId: string) {
-  const confirmed = window.confirm(
+  const confirmed = await confirmDialog(
+    "删除消费组？",
     `确定删除消费组“${groupId}”吗？这会删除该组的消费进度，且无法恢复。其他消费组不会受到影响。`,
+    "确认删除",
+    true,
   );
   if (!confirmed) return;
 

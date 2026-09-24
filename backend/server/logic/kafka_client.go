@@ -161,7 +161,7 @@ func (conn *sshProxyConn) Close() error {
 func normalizedTimeout(seconds int) time.Duration {
 	timeout := time.Duration(seconds) * time.Second
 	if timeout <= 0 || timeout > 60*time.Second {
-		return 10 * time.Second
+		return 60 * time.Second
 	}
 	return timeout
 }

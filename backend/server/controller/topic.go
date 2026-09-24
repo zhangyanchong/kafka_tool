@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"kafka-tool/backend/server/logic"
 	"kafka-tool/backend/server/model"
@@ -189,7 +190,13 @@ func (h *Handler) SearchTopicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer client.Close()
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	// 内容检索可能需要顺序读取多个分区。即使旧连接保存的是较短的
+	// 建连超时，也给予检索至少一分钟，避免返回不完整的结果。
+	searchTimeout := timeout
+	if searchTimeout < time.Minute {
+		searchTimeout = time.Minute
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), searchTimeout)
 	defer cancel()
 	response, err := logic.FindMessages(ctx, client, topic, req, fromTime, toTime)
 	if err != nil {

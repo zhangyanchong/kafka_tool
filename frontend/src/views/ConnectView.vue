@@ -110,6 +110,7 @@ async function submit() {
                 <option :value="10">10 秒</option>
                 <option :value="20">20 秒</option>
                 <option :value="30">30 秒</option>
+                <option :value="60">60 秒</option>
               </select>
             </label>
           </div>

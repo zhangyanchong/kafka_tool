@@ -202,6 +202,9 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
 __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
     value: (30),
 });
+__VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+    value: (60),
+});
 if (__VLS_ctx.store.usesSasl) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
