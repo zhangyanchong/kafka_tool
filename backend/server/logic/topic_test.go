@@ -2,6 +2,7 @@ package logic
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"kafka-tool/backend/server/model"
@@ -9,6 +10,25 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
+
+func TestCompactMessageItemsOnlyOmitsLargeValues(t *testing.T) {
+	items := []model.MessageItem{
+		{Value: "small"},
+		{Value: strings.Repeat("x", compactMessageThreshold+1)},
+	}
+
+	compactMessageItems(items)
+
+	if items[0].Value != "small" || items[0].ValueOmitted {
+		t.Fatal("small message was unexpectedly compacted")
+	}
+	if !items[1].ValueOmitted || items[1].Value != "" {
+		t.Fatal("large message content was not omitted")
+	}
+	if len(items[1].Preview) != compactMessagePreviewBytes {
+		t.Fatalf("preview length = %d, want %d", len(items[1].Preview), compactMessagePreviewBytes)
+	}
+}
 
 func TestSortMessageItemsByTimeDescUsesActualTimestamp(t *testing.T) {
 	items := []model.MessageItem{

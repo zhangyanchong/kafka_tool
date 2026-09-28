@@ -94,7 +94,7 @@ test("deleting another connection preserves the active one, then deleting active
   assert.equal(store.connections.length, 0);
 });
 
-test("SSH password stays in memory and is not persisted", async () => {
+test("SSH password is persisted for the saved connection", async () => {
   storage.setItem("kafka-tool.connections", JSON.stringify(savedConnections));
   storage.setItem("kafka-tool.active-connection", "cluster-a");
   setActivePinia(createPinia());
@@ -108,7 +108,7 @@ test("SSH password stays in memory and is not persisted", async () => {
   assert.equal(await store.test(), true);
 
   const persisted = JSON.parse(storage.getItem("kafka-tool.connections"));
-  assert.equal(persisted.find((item) => item.id === "cluster-a").config.sshPassword, "");
+  assert.equal(persisted.find((item) => item.id === "cluster-a").config.sshPassword, "ssh-secret");
   assert.equal(store.activate("cluster-a"), true);
   assert.equal(store.form.sshPassword, "ssh-secret");
 });

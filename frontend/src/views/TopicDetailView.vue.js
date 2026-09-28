@@ -1,6 +1,6 @@
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, produceTopicMessage, recreateTopic, searchTopicMessages, } from "@/api/connections";
+import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, fetchTopicMessageEstimate, fetchTopicMessageSearchStatus, readTopicMessage, produceTopicMessage, recreateTopic, startTopicMessageSearch, cancelTopicMessageSearch, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
 import AppPagination from "@/components/AppPagination.vue";
 import { alertDialog, confirmDialog } from "@/dialog";
@@ -13,8 +13,10 @@ const fromDate = ref("");
 const fromClock = ref("");
 const toDate = ref("");
 const toClock = ref("");
+const timeRangeEnabled = ref(false);
 const limit = ref(20);
 const scanLimit = ref(10000);
+const compactResults = ref(false);
 const conditions = ref([{ id: 1, value: "" }]);
 const matchAny = ref(false);
 const advancedSearchOpen = ref(false);
@@ -24,9 +26,16 @@ const exporting = ref(false);
 const exportProgress = ref(0);
 const loadError = ref("");
 const scanned = ref(0);
+const searchElapsedMS = ref(null);
 const truncated = ref(false);
 const estimatedMessages = ref(null);
+const estimateLoading = ref(false);
+const estimateError = ref("");
+let activeSearchTaskID = "";
+let searchProgressTimer = null;
+let searchStatusLoading = false;
 const expanded = ref(new Set());
+const loadingMessageIDs = ref(new Set());
 const page = ref(1);
 const pageSize = 10;
 const copied = ref("");
@@ -97,6 +106,16 @@ function activateEndTime() {
     if (!toClock.value)
         toClock.value = "23:59";
 }
+function enableTimeRange() {
+    timeRangeEnabled.value = true;
+}
+function clearTimeRange() {
+    timeRangeEnabled.value = false;
+    fromDate.value = "";
+    fromClock.value = "";
+    toDate.value = "";
+    toClock.value = "";
+}
 function closeNativePicker(event) {
     const input = event.currentTarget;
     requestAnimationFrame(() => input.blur());
@@ -152,10 +171,22 @@ function formatTime(value) {
 function formatBytes(bytes) {
     if (bytes < 1024)
         return `${bytes} B`;
+    if (bytes >= 1024 * 1024)
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / 1024).toFixed(1)} KB`;
+}
+function formatSearchElapsed(ms) {
+    if (ms < 1000)
+        return `${ms} ms`;
+    if (ms < 10000)
+        return `${(ms / 1000).toFixed(1)} 秒`;
+    return `${Math.round(ms / 1000)} 秒`;
 }
 function preview(value) {
     return value.length > 240 ? `${value.slice(0, 240)}…` : value;
+}
+function displayedMessageValue(message) {
+    return message.valueOmitted ? message.preview || "" : message.value;
 }
 function messageId(message) {
     return `${message.partition}-${message.offset}`;
@@ -168,7 +199,24 @@ function healthMetric(value) {
 function estimatedMessageMetric() {
     if (estimatedMessages.value != null)
         return estimatedMessages.value.toLocaleString("zh-CN");
-    return loading.value ? "读取中" : "不可用";
+    return estimateLoading.value ? "读取中" : "不可用";
+}
+async function loadMessageEstimate() {
+    if (estimateLoading.value)
+        return;
+    estimateLoading.value = true;
+    estimateError.value = "";
+    try {
+        const response = await fetchTopicMessageEstimate(topic.value, connection.form);
+        estimatedMessages.value = response.estimatedMessages;
+    }
+    catch (reason) {
+        estimatedMessages.value = null;
+        estimateError.value = reason instanceof Error ? reason.message : "消息量估算失败";
+    }
+    finally {
+        estimateLoading.value = false;
+    }
 }
 function brokerList(values) {
     return values.length ? values.join(", ") : "无";
@@ -256,7 +304,7 @@ async function recreateCurrentTopic() {
                 await alertDialog("消费组删除结果", stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
             }
         }
-        await Promise.all([search(), loadTopicHealth()]);
+        await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
     }
     catch (reason) {
         loadError.value = reason instanceof Error ? reason.message : "Topic 重建失败";
@@ -288,7 +336,7 @@ async function produceMessage() {
         messageValue.value = "";
         // Kafka 已确认写入后立刻结束按钮的“保存中”状态；后续刷新不应让用户误以为写入还未完成。
         producing.value = false;
-        await Promise.all([search(), loadTopicHealth()]);
+        await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
     }
     catch (reason) {
         produceError.value = reason instanceof Error ? reason.message : "消息写入失败";
@@ -297,10 +345,32 @@ async function produceMessage() {
         producing.value = false;
     }
 }
-function toggleMessage(message) {
+async function toggleMessage(message) {
     const next = new Set(expanded.value);
     const id = messageId(message);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) {
+        next.delete(id);
+        expanded.value = next;
+        return;
+    }
+    if (message.valueOmitted) {
+        const loading = new Set(loadingMessageIDs.value);
+        loading.add(id);
+        loadingMessageIDs.value = loading;
+        try {
+            await fullMessageValue(message);
+        }
+        catch (reason) {
+            loadError.value = reason instanceof Error ? reason.message : "读取完整消息失败";
+            return;
+        }
+        finally {
+            const completed = new Set(loadingMessageIDs.value);
+            completed.delete(id);
+            loadingMessageIDs.value = completed;
+        }
+    }
+    next.add(id);
     expanded.value = next;
 }
 async function copyText(text, id) {
@@ -324,6 +394,8 @@ async function copyText(text, id) {
     }, 1400);
 }
 async function search() {
+    if (loading.value)
+        return;
     const requestedScanLimit = Math.trunc(Number(scanLimit.value));
     if (!Number.isFinite(requestedScanLimit) || requestedScanLimit < 1 || requestedScanLimit > 1000000) {
         loadError.value = "最大查询条数必须在 1 到 1,000,000 之间";
@@ -344,9 +416,12 @@ async function search() {
     }
     loading.value = true;
     loadError.value = "";
+    scanned.value = 0;
+    searchElapsedMS.value = 0;
+    truncated.value = false;
     expanded.value = new Set();
     try {
-        const response = await searchTopicMessages(topic.value, connection.form, {
+        const started = await startTopicMessageSearch(topic.value, connection.form, {
             fromTime: normalizedFromTime,
             toTime: normalizedToTime,
             conditions: conditions.value
@@ -355,31 +430,94 @@ async function search() {
             matchAny: matchAny.value,
             limit: limit.value,
             scanLimit: scanLimit.value,
+            compactResults: compactResults.value,
         });
-        messages.value = response.items;
-        page.value = 1;
-        scanned.value = response.scanned;
-        truncated.value = response.truncated;
-        estimatedMessages.value = response.estimatedMessages ?? null;
+        activeSearchTaskID = started.taskId;
+        await refreshSearchProgress(started.taskId);
+        if (activeSearchTaskID === started.taskId && loading.value) {
+            searchProgressTimer = window.setInterval(() => { void refreshSearchProgress(started.taskId); }, 500);
+        }
     }
     catch (reason) {
         messages.value = [];
         loadError.value = reason instanceof Error ? reason.message : "消息读取失败";
-    }
-    finally {
+        stopSearchProgress();
         loading.value = false;
     }
 }
+function stopSearchProgress() {
+    if (searchProgressTimer != null)
+        window.clearInterval(searchProgressTimer);
+    searchProgressTimer = null;
+}
+async function refreshSearchProgress(taskID) {
+    if (searchStatusLoading || activeSearchTaskID !== taskID)
+        return;
+    searchStatusLoading = true;
+    try {
+        const status = await fetchTopicMessageSearchStatus(topic.value, taskID);
+        if (activeSearchTaskID !== taskID)
+            return;
+        scanned.value = status.scanned;
+        searchElapsedMS.value = status.elapsedMs;
+        if (!status.done)
+            return;
+        stopSearchProgress();
+        if (status.canceled) {
+            activeSearchTaskID = "";
+            loading.value = false;
+            return;
+        }
+        if (status.error)
+            throw new Error(status.error);
+        if (!status.response)
+            throw new Error("搜索已完成，但没有返回结果");
+        messages.value = status.response.items;
+        page.value = 1;
+        scanned.value = status.response.scanned;
+        truncated.value = status.response.truncated;
+        activeSearchTaskID = "";
+        loading.value = false;
+    }
+    catch (reason) {
+        if (activeSearchTaskID !== taskID)
+            return;
+        stopSearchProgress();
+        activeSearchTaskID = "";
+        loading.value = false;
+        messages.value = [];
+        loadError.value = reason instanceof Error ? reason.message : "读取搜索进度失败";
+    }
+    finally {
+        searchStatusLoading = false;
+    }
+}
+function cancelSearch() {
+    const taskID = activeSearchTaskID;
+    activeSearchTaskID = "";
+    stopSearchProgress();
+    loading.value = false;
+    loadError.value = "";
+    if (taskID)
+        void cancelTopicMessageSearch(topic.value, taskID);
+}
 function resetSearch() {
-    fromDate.value = "";
-    fromClock.value = "";
-    toDate.value = "";
-    toClock.value = "";
+    clearTimeRange();
     conditions.value = [{ id: nextConditionId++, value: "" }];
     matchAny.value = false;
     limit.value = 20;
     scanLimit.value = 10000;
+    compactResults.value = false;
     search();
+}
+async function fullMessageValue(message) {
+    if (!message.valueOmitted)
+        return message.value;
+    const complete = await readTopicMessage(topic.value, connection.form, message.partition, message.offset);
+    message.value = complete.value;
+    message.valueOmitted = false;
+    message.preview = undefined;
+    return complete.value;
 }
 async function exportMessages() {
     if (!messages.value.length || exporting.value)
@@ -398,7 +536,7 @@ async function exportMessages() {
             if (!exportID)
                 return;
             for (let index = 0; index < messages.value.length; index += 1) {
-                await nativeExport.AppendMessageExport(exportID, messages.value[index].value);
+                await nativeExport.AppendMessageExport(exportID, await fullMessageValue(messages.value[index]));
                 exportProgress.value = index + 1;
                 if (index % 5 === 4)
                     await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -416,7 +554,8 @@ async function exportMessages() {
         }
         return;
     }
-    const blob = new Blob(messages.value.flatMap((message) => [message.value, "\n"]), {
+    const values = await Promise.all(messages.value.map((message) => fullMessageValue(message)));
+    const blob = new Blob(values.flatMap((value) => [value, "\n"]), {
         type: "application/x-ndjson;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -434,9 +573,12 @@ onMounted(() => {
     fromClock.value = "";
     toDate.value = "";
     toClock.value = "";
+    timeRangeEnabled.value = false;
     loadTopicHealth();
+    loadMessageEstimate();
     search();
 });
+onUnmounted(cancelSearch);
 const __VLS_ctx = {
     ...{},
     ...{},
@@ -566,6 +708,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 (__VLS_ctx.estimatedMessageMetric());
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
+(__VLS_ctx.estimateError || "分区起止 Offset 差值");
 __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
@@ -639,7 +782,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
             // @ts-ignore
-            [producing, producing, producing, messageKey, messageValue, produceError, produceError, produceSuccess, produceSuccess, estimatedMessageMetric, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+            [producing, producing, producing, messageKey, messageValue, produceError, produceError, produceSuccess, produceSuccess, estimatedMessageMetric, estimateError, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
         } },
     type: "button",
     'aria-expanded': (!__VLS_ctx.healthCollapsed),
@@ -853,76 +996,108 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
 });
 /** @type {__VLS_StyleScopedClasses['datetime-label']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "datetime-fields" },
-});
-/** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    ...{ onFocus: (__VLS_ctx.activateStartTime) },
-    ...{ onChange: (__VLS_ctx.closeNativePicker) },
-    ...{ class: "date-entry" },
-    type: "date",
-    name: "message-search-from-date",
-    autocomplete: "off",
-    lang: "en-CA",
-    'aria-label': "开始日期",
-});
-(__VLS_ctx.fromDate);
-/** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    ...{ onFocus: (__VLS_ctx.activateStartTime) },
-    ...{ onChange: (__VLS_ctx.closeNativePicker) },
-    ...{ class: "clock-entry" },
-    type: "time",
-    name: "message-search-from-clock",
-    step: "60",
-    'aria-label': "开始时分",
-});
-(__VLS_ctx.fromClock);
-/** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
+if (__VLS_ctx.timeRangeEnabled) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "datetime-fields" },
+    });
+    /** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        ...{ onFocus: (__VLS_ctx.activateStartTime) },
+        ...{ onChange: (__VLS_ctx.closeNativePicker) },
+        ...{ class: "date-entry" },
+        type: "date",
+        name: "message-search-from-date",
+        autocomplete: "off",
+        lang: "en-CA",
+        'aria-label': "开始日期",
+    });
+    (__VLS_ctx.fromDate);
+    /** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        ...{ onFocus: (__VLS_ctx.activateStartTime) },
+        ...{ onChange: (__VLS_ctx.closeNativePicker) },
+        ...{ class: "clock-entry" },
+        type: "time",
+        name: "message-search-from-clock",
+        step: "60",
+        'aria-label': "开始时分",
+    });
+    (__VLS_ctx.fromClock);
+    /** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.enableTimeRange) },
+        type: "button",
+        ...{ class: "datetime-empty" },
+    });
+    /** @type {__VLS_StyleScopedClasses['datetime-empty']} */ ;
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
     ...{ class: "datetime-label" },
 });
 /** @type {__VLS_StyleScopedClasses['datetime-label']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+if (__VLS_ctx.timeRangeEnabled) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "datetime-fields" },
+    });
+    /** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        ...{ onFocus: (__VLS_ctx.activateEndTime) },
+        ...{ onChange: (__VLS_ctx.closeNativePicker) },
+        ...{ class: "date-entry" },
+        type: "date",
+        name: "message-search-to-date",
+        autocomplete: "off",
+        lang: "en-CA",
+        'aria-label': "结束日期",
+    });
+    (__VLS_ctx.toDate);
+    /** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        ...{ onFocus: (__VLS_ctx.activateEndTime) },
+        ...{ onChange: (__VLS_ctx.closeNativePicker) },
+        ...{ class: "clock-entry" },
+        type: "time",
+        name: "message-search-to-clock",
+        step: "60",
+        'aria-label': "结束时分",
+    });
+    (__VLS_ctx.toClock);
+    /** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
+}
+else {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.enableTimeRange) },
+        type: "button",
+        ...{ class: "datetime-empty" },
+    });
+    /** @type {__VLS_StyleScopedClasses['datetime-empty']} */ ;
+}
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-    ...{ class: "datetime-fields" },
+    ...{ class: "time-range-actions" },
 });
-/** @type {__VLS_StyleScopedClasses['datetime-fields']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    ...{ onFocus: (__VLS_ctx.activateEndTime) },
-    ...{ onChange: (__VLS_ctx.closeNativePicker) },
-    ...{ class: "date-entry" },
-    type: "date",
-    name: "message-search-to-date",
-    autocomplete: "off",
-    lang: "en-CA",
-    'aria-label': "结束日期",
-});
-(__VLS_ctx.toDate);
-/** @type {__VLS_StyleScopedClasses['date-entry']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    ...{ onFocus: (__VLS_ctx.activateEndTime) },
-    ...{ onChange: (__VLS_ctx.closeNativePicker) },
-    ...{ class: "clock-entry" },
-    type: "time",
-    name: "message-search-to-clock",
-    step: "60",
-    'aria-label': "结束时分",
-});
-(__VLS_ctx.toClock);
-/** @type {__VLS_StyleScopedClasses['clock-entry']} */ ;
+/** @type {__VLS_StyleScopedClasses['time-range-actions']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.advancedSearchOpen = !__VLS_ctx.advancedSearchOpen);
             // @ts-ignore
-            [addSearchCondition, activateStartTime, activateStartTime, closeNativePicker, closeNativePicker, closeNativePicker, closeNativePicker, fromDate, fromClock, activateEndTime, activateEndTime, toDate, toClock, advancedSearchOpen, advancedSearchOpen,];
+            [addSearchCondition, timeRangeEnabled, timeRangeEnabled, activateStartTime, activateStartTime, closeNativePicker, closeNativePicker, closeNativePicker, closeNativePicker, fromDate, fromClock, enableTimeRange, enableTimeRange, activateEndTime, activateEndTime, toDate, toClock, advancedSearchOpen, advancedSearchOpen,];
         } },
     type: "button",
     ...{ class: "advanced-search-toggle" },
 });
 /** @type {__VLS_StyleScopedClasses['advanced-search-toggle']} */ ;
 (__VLS_ctx.advancedSearchOpen ? '收起高级设置' : '高级设置');
+if (__VLS_ctx.timeRangeEnabled) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.clearTimeRange) },
+        type: "button",
+        ...{ class: "clear-time-range" },
+    });
+    /** @type {__VLS_StyleScopedClasses['clear-time-range']} */ ;
+}
 if (__VLS_ctx.advancedSearchOpen) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
         ...{ class: "advanced-search-options" },
@@ -980,13 +1155,28 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     disabled: (__VLS_ctx.loading || __VLS_ctx.exporting),
 });
 /** @type {__VLS_StyleScopedClasses['clear-button']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-    type: "submit",
-    ...{ class: "search-button" },
+__VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+    ...{ class: "compact-results-toggle" },
+});
+/** @type {__VLS_StyleScopedClasses['compact-results-toggle']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    type: "checkbox",
     disabled: (__VLS_ctx.loading || __VLS_ctx.exporting),
 });
+(__VLS_ctx.compactResults);
+__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+__VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+    ...{ onClick: (...[$event]) => {
+            return (__VLS_ctx.loading ? __VLS_ctx.cancelSearch() : __VLS_ctx.search());
+            // @ts-ignore
+            [search, timeRangeEnabled, advancedSearchOpen, advancedSearchOpen, clearTimeRange, limit, scanLimit, exportMessages, loading, loading, loading, loading, exporting, exporting, exporting, exporting, messages, messages, exportProgress, resetSearch, compactResults, cancelSearch,];
+        } },
+    type: "button",
+    ...{ class: "search-button" },
+    disabled: (__VLS_ctx.exporting),
+});
 /** @type {__VLS_StyleScopedClasses['search-button']} */ ;
-(__VLS_ctx.loading ? "搜索中…" : "搜索消息");
+(__VLS_ctx.loading ? "取消搜索" : "搜索消息");
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "search-meta" },
 });
@@ -1000,6 +1190,11 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({})
 __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
 (__VLS_ctx.scanned.toLocaleString());
+if (__VLS_ctx.searchElapsedMS !== null) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    (__VLS_ctx.formatSearchElapsed(__VLS_ctx.searchElapsedMS));
+}
 if (__VLS_ctx.truncated) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
         ...{ class: "scan-warning" },
@@ -1030,7 +1225,7 @@ if (__VLS_ctx.messages.length) {
                         throw 0;
                     return (__VLS_ctx.toggleMessage(message));
                     // @ts-ignore
-                    [advancedSearchOpen, advancedSearchOpen, limit, scanLimit, scanLimit, exportMessages, loading, loading, loading, loading, exporting, exporting, exporting, exporting, messages, messages, messages, messages, exportProgress, resetSearch, pageSize, scanned, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
+                    [scanLimit, loading, exporting, messages, messages, pageSize, scanned, searchElapsedMS, searchElapsedMS, formatSearchElapsed, truncated, loadError, loadError, paginatedMessages, toggleMessage,];
                 } },
             key: (__VLS_ctx.messageId(message)),
             ...{ class: "message-card" },
@@ -1084,24 +1279,25 @@ if (__VLS_ctx.messages.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.pre, __VLS_intrinsics.pre)({
             ...{ onClick: () => { } },
         });
-        (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? message.value : __VLS_ctx.preview(message.value));
+        (__VLS_ctx.loadingMessageIDs.has(__VLS_ctx.messageId(message)) ? "正在读取完整内容…" : (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? message.value : __VLS_ctx.preview(__VLS_ctx.displayedMessageValue(message))));
         __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
             ...{ onClick: (...[$event]) => {
                     if (!(__VLS_ctx.messages.length))
                         throw 0;
                     return (__VLS_ctx.copyText(message.value, `value-${__VLS_ctx.messageId(message)}`));
                     // @ts-ignore
-                    [messageId, messageId, messageId, copyText, copied, expanded, preview,];
+                    [messageId, messageId, messageId, messageId, copyText, copied, loadingMessageIDs, expanded, preview, displayedMessageValue,];
                 } },
             type: "button",
+            disabled: (message.valueOmitted),
         });
         (__VLS_ctx.copied === `value-${__VLS_ctx.messageId(message)}` ? "已复制" : "复制内容");
-        if (message.value.length > 240) {
+        if (message.valueOmitted || message.value.length > 240) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.footer, __VLS_intrinsics.footer)({});
-            (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? "收起内容" : "展开完整内容");
+            (__VLS_ctx.loadingMessageIDs.has(__VLS_ctx.messageId(message)) ? "正在加载完整内容…" : (message.valueOmitted ? "内容较大，点击加载完整内容" : (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? "收起内容" : "展开完整内容")));
         }
         // @ts-ignore
-        [messageId, messageId, copied, expanded,];
+        [messageId, messageId, messageId, copied, loadingMessageIDs, expanded,];
     }
     const __VLS_11 = AppPagination;
     // @ts-ignore

@@ -61,7 +61,7 @@ async function submit() {
         </div>
         <div class="signal-foot"><span>PRODUCE</span><span>CONSUME</span><span>LAG</span></div>
       </div>
-      <small>只读监控 · 密码不会保存到本地</small>
+      <small>只读监控 · Kafka 密码不会保存到本地</small>
     </section>
 
     <section class="form-panel">
@@ -70,8 +70,8 @@ async function submit() {
           <RouterLink class="back-link" to="/">← 返回集群列表</RouterLink>
           <span class="step">{{ editing ? "EDIT CLUSTER" : reconnecting ? "RECONNECT" : "ADD / CONNECT" }}</span>
           <h2>{{ editing ? "修改 Kafka 集群" : reconnecting ? "连接 Kafka 集群" : "添加 Kafka 集群" }}</h2>
-          <p v-if="editing">修改配置后需要重新测试连接；密码不会保存在本地。</p>
-          <p v-else-if="reconnecting">出于安全考虑密码不会保存在本地，请重新输入密码后进入集群。</p>
+          <p v-if="editing">修改配置后需要重新测试连接；Kafka 密码不会保存在本地。</p>
+          <p v-else-if="reconnecting">Kafka 密码不会保存在本地；SSH 密码会从该连接的本机配置中自动回填。</p>
           <p v-else>添加一个 Broker 即可发现整个集群，也可以填写多个地址提高连接可用性。</p>
         </header>
 
@@ -183,7 +183,7 @@ async function submit() {
                 </div>
               </label>
             </div>
-            <small>SSH 主机密钥暂不校验；SSH 密码仅保留在本次运行内存中。</small>
+            <small>SSH 主机密钥暂不校验；SSH 密码会保存在本机的连接配置中。</small>
           </template>
 
           <div v-if="store.result" class="notice success">

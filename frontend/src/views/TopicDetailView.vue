@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
 	deleteConsumer,
   deleteTopic,
   fetchTopicDeletionPlan,
   fetchTopicHealth,
+  fetchTopicMessageEstimate,
+  fetchTopicMessageSearchStatus,
+  readTopicMessage,
   produceTopicMessage,
 	recreateTopic,
-  searchTopicMessages,
+  startTopicMessageSearch,
+  cancelTopicMessageSearch,
   type KafkaMessage,
   type TopicHealth,
   type TopicHealthIssue,
@@ -46,8 +50,10 @@ const fromDate = ref("");
 const fromClock = ref("");
 const toDate = ref("");
 const toClock = ref("");
+const timeRangeEnabled = ref(false);
 const limit = ref(20);
 const scanLimit = ref(10000);
+const compactResults = ref(false);
 const conditions = ref<SearchCondition[]>([{ id: 1, value: "" }]);
 const matchAny = ref(false);
 const advancedSearchOpen = ref(false);
@@ -57,9 +63,16 @@ const exporting = ref(false);
 const exportProgress = ref(0);
 const loadError = ref("");
 const scanned = ref(0);
+const searchElapsedMS = ref<number | null>(null);
 const truncated = ref(false);
 const estimatedMessages = ref<number | null>(null);
+const estimateLoading = ref(false);
+const estimateError = ref("");
+let activeSearchTaskID = "";
+let searchProgressTimer: ReturnType<typeof window.setInterval> | null = null;
+let searchStatusLoading = false;
 const expanded = ref<Set<string>>(new Set());
+const loadingMessageIDs = ref<Set<string>>(new Set());
 const page = ref(1);
 const pageSize = 10;
 const copied = ref("");
@@ -130,6 +143,18 @@ function activateEndTime() {
   if (!toClock.value) toClock.value = "23:59";
 }
 
+function enableTimeRange() {
+  timeRangeEnabled.value = true;
+}
+
+function clearTimeRange() {
+  timeRangeEnabled.value = false;
+  fromDate.value = "";
+  fromClock.value = "";
+  toDate.value = "";
+  toClock.value = "";
+}
+
 function closeNativePicker(event: Event) {
   const input = event.currentTarget as HTMLInputElement;
   requestAnimationFrame(() => input.blur());
@@ -190,11 +215,22 @@ function formatTime(value: string) {
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function formatSearchElapsed(ms: number) {
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 10000) return `${(ms / 1000).toFixed(1)} 秒`;
+  return `${Math.round(ms / 1000)} 秒`;
 }
 
 function preview(value: string) {
   return value.length > 240 ? `${value.slice(0, 240)}…` : value;
+}
+
+function displayedMessageValue(message: KafkaMessage) {
+  return message.valueOmitted ? message.preview || "" : message.value;
 }
 
 function messageId(message: KafkaMessage) {
@@ -208,7 +244,22 @@ function healthMetric(value?: number) {
 
 function estimatedMessageMetric() {
   if (estimatedMessages.value != null) return estimatedMessages.value.toLocaleString("zh-CN");
-  return loading.value ? "读取中" : "不可用";
+  return estimateLoading.value ? "读取中" : "不可用";
+}
+
+async function loadMessageEstimate() {
+  if (estimateLoading.value) return;
+  estimateLoading.value = true;
+  estimateError.value = "";
+  try {
+    const response = await fetchTopicMessageEstimate(topic.value, connection.form);
+    estimatedMessages.value = response.estimatedMessages;
+  } catch (reason) {
+    estimatedMessages.value = null;
+    estimateError.value = reason instanceof Error ? reason.message : "消息量估算失败";
+  } finally {
+    estimateLoading.value = false;
+  }
 }
 
 function brokerList(values: number[]) {
@@ -303,7 +354,7 @@ async function recreateCurrentTopic() {
         await alertDialog("消费组删除结果", stillFailed.length ? `以下消费组仍未删除，可能仍有客户端在线：${stillFailed.join("、")}` : "已完成消费组的再次删除。");
       }
     }
-    await Promise.all([search(), loadTopicHealth()]);
+    await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
   } catch (reason) {
     loadError.value = reason instanceof Error ? reason.message : "Topic 重建失败";
   } finally {
@@ -334,7 +385,7 @@ async function produceMessage() {
     messageValue.value = "";
     // Kafka 已确认写入后立刻结束按钮的“保存中”状态；后续刷新不应让用户误以为写入还未完成。
     producing.value = false;
-    await Promise.all([search(), loadTopicHealth()]);
+    await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
   } catch (reason) {
     produceError.value = reason instanceof Error ? reason.message : "消息写入失败";
   } finally {
@@ -342,10 +393,30 @@ async function produceMessage() {
   }
 }
 
-function toggleMessage(message: KafkaMessage) {
+async function toggleMessage(message: KafkaMessage) {
   const next = new Set(expanded.value);
   const id = messageId(message);
-  next.has(id) ? next.delete(id) : next.add(id);
+  if (next.has(id)) {
+    next.delete(id);
+    expanded.value = next;
+    return;
+  }
+  if (message.valueOmitted) {
+    const loading = new Set(loadingMessageIDs.value);
+    loading.add(id);
+    loadingMessageIDs.value = loading;
+    try {
+      await fullMessageValue(message);
+    } catch (reason) {
+      loadError.value = reason instanceof Error ? reason.message : "读取完整消息失败";
+      return;
+    } finally {
+      const completed = new Set(loadingMessageIDs.value);
+      completed.delete(id);
+      loadingMessageIDs.value = completed;
+    }
+  }
+  next.add(id);
   expanded.value = next;
 }
 
@@ -369,6 +440,7 @@ async function copyText(text: string, id: string) {
 }
 
 async function search() {
+  if (loading.value) return;
   const requestedScanLimit = Math.trunc(Number(scanLimit.value));
   if (!Number.isFinite(requestedScanLimit) || requestedScanLimit < 1 || requestedScanLimit > 1000000) {
     loadError.value = "最大查询条数必须在 1 到 1,000,000 之间";
@@ -388,9 +460,12 @@ async function search() {
   }
   loading.value = true;
   loadError.value = "";
+  scanned.value = 0;
+  searchElapsedMS.value = 0;
+  truncated.value = false;
   expanded.value = new Set();
   try {
-    const response = await searchTopicMessages(topic.value, connection.form, {
+    const started = await startTopicMessageSearch(topic.value, connection.form, {
       fromTime: normalizedFromTime,
       toTime: normalizedToTime,
       conditions: conditions.value
@@ -399,30 +474,87 @@ async function search() {
       matchAny: matchAny.value,
       limit: limit.value,
       scanLimit: scanLimit.value,
+      compactResults: compactResults.value,
     });
-    messages.value = response.items;
-    page.value = 1;
-    scanned.value = response.scanned;
-    truncated.value = response.truncated;
-    estimatedMessages.value = response.estimatedMessages ?? null;
+    activeSearchTaskID = started.taskId;
+    await refreshSearchProgress(started.taskId);
+    if (activeSearchTaskID === started.taskId && loading.value) {
+      searchProgressTimer = window.setInterval(() => { void refreshSearchProgress(started.taskId); }, 500);
+    }
   } catch (reason) {
     messages.value = [];
     loadError.value = reason instanceof Error ? reason.message : "消息读取失败";
-  } finally {
+    stopSearchProgress();
     loading.value = false;
   }
 }
 
+function stopSearchProgress() {
+  if (searchProgressTimer != null) window.clearInterval(searchProgressTimer);
+  searchProgressTimer = null;
+}
+
+async function refreshSearchProgress(taskID: string) {
+  if (searchStatusLoading || activeSearchTaskID !== taskID) return;
+  searchStatusLoading = true;
+  try {
+    const status = await fetchTopicMessageSearchStatus(topic.value, taskID);
+    if (activeSearchTaskID !== taskID) return;
+    scanned.value = status.scanned;
+    searchElapsedMS.value = status.elapsedMs;
+    if (!status.done) return;
+    stopSearchProgress();
+    if (status.canceled) {
+      activeSearchTaskID = "";
+      loading.value = false;
+      return;
+    }
+    if (status.error) throw new Error(status.error);
+    if (!status.response) throw new Error("搜索已完成，但没有返回结果");
+    messages.value = status.response.items;
+    page.value = 1;
+    scanned.value = status.response.scanned;
+    truncated.value = status.response.truncated;
+    activeSearchTaskID = "";
+    loading.value = false;
+  } catch (reason) {
+    if (activeSearchTaskID !== taskID) return;
+    stopSearchProgress();
+    activeSearchTaskID = "";
+    loading.value = false;
+    messages.value = [];
+    loadError.value = reason instanceof Error ? reason.message : "读取搜索进度失败";
+  } finally {
+    searchStatusLoading = false;
+  }
+}
+
+function cancelSearch() {
+  const taskID = activeSearchTaskID;
+  activeSearchTaskID = "";
+  stopSearchProgress();
+  loading.value = false;
+  loadError.value = "";
+  if (taskID) void cancelTopicMessageSearch(topic.value, taskID);
+}
+
 function resetSearch() {
-  fromDate.value = "";
-  fromClock.value = "";
-  toDate.value = "";
-  toClock.value = "";
+  clearTimeRange();
   conditions.value = [{ id: nextConditionId++, value: "" }];
   matchAny.value = false;
   limit.value = 20;
   scanLimit.value = 10000;
+  compactResults.value = false;
   search();
+}
+
+async function fullMessageValue(message: KafkaMessage) {
+  if (!message.valueOmitted) return message.value;
+  const complete = await readTopicMessage(topic.value, connection.form, message.partition, message.offset);
+  message.value = complete.value;
+  message.valueOmitted = false;
+  message.preview = undefined;
+  return complete.value;
 }
 
 async function exportMessages() {
@@ -440,7 +572,7 @@ async function exportMessages() {
       exportID = await nativeExport.BeginMessageExport(filename);
       if (!exportID) return;
       for (let index = 0; index < messages.value.length; index += 1) {
-        await nativeExport.AppendMessageExport(exportID, messages.value[index].value);
+        await nativeExport.AppendMessageExport(exportID, await fullMessageValue(messages.value[index]));
         exportProgress.value = index + 1;
         if (index % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
@@ -455,7 +587,8 @@ async function exportMessages() {
     return;
   }
 
-  const blob = new Blob(messages.value.flatMap((message) => [message.value, "\n"]), {
+  const values = await Promise.all(messages.value.map((message) => fullMessageValue(message)));
+  const blob = new Blob(values.flatMap((value) => [value, "\n"]), {
     type: "application/x-ndjson;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
@@ -474,9 +607,13 @@ onMounted(() => {
   fromClock.value = "";
   toDate.value = "";
   toClock.value = "";
+  timeRangeEnabled.value = false;
   loadTopicHealth();
+  loadMessageEstimate();
   search();
 });
+
+onUnmounted(cancelSearch);
 </script>
 
 <template>
@@ -512,7 +649,7 @@ onMounted(() => {
     </form>
 
     <div class="summary-grid topic-health-summary">
-      <article><span>消息量（估算）</span><strong>{{ estimatedMessageMetric() }}</strong><small>分区起止 Offset 差值</small></article>
+      <article><span>消息量（估算）</span><strong>{{ estimatedMessageMetric() }}</strong><small>{{ estimateError || "分区起止 Offset 差值" }}</small></article>
       <article><span>分区总数</span><strong>{{ healthMetric(topicHealth?.partitions) }}</strong><small>Metadata 中的 Partition</small></article>
       <article><span>正常分区</span><strong>{{ healthMetric(topicHealth?.healthyPartitions) }}</strong><small>Leader 与副本同步正常</small></article>
       <article :class="{ warning: (topicHealth?.problemPartitions || 0) > 0 }"><span>异常分区</span><strong>{{ healthMetric(topicHealth?.problemPartitions) }}</strong><small>至少存在一项异常</small></article>
@@ -619,19 +756,24 @@ onMounted(() => {
       <div class="search-options-row">
         <label class="datetime-label">
           <span>开始时间（可选）</span>
-          <div class="datetime-fields">
+          <div v-if="timeRangeEnabled" class="datetime-fields">
             <input v-model="fromDate" class="date-entry" type="date" name="message-search-from-date" autocomplete="off" lang="en-CA" aria-label="开始日期" @focus="activateStartTime" @change="closeNativePicker" />
             <input v-model="fromClock" class="clock-entry" type="time" name="message-search-from-clock" step="60" aria-label="开始时分" @focus="activateStartTime" @change="closeNativePicker" />
           </div>
+          <button v-else type="button" class="datetime-empty" @click="enableTimeRange">未设置</button>
         </label>
         <label class="datetime-label">
           <span>结束时间（可选）</span>
-          <div class="datetime-fields">
+          <div v-if="timeRangeEnabled" class="datetime-fields">
             <input v-model="toDate" class="date-entry" type="date" name="message-search-to-date" autocomplete="off" lang="en-CA" aria-label="结束日期" @focus="activateEndTime" @change="closeNativePicker" />
             <input v-model="toClock" class="clock-entry" type="time" name="message-search-to-clock" step="60" aria-label="结束时分" @focus="activateEndTime" @change="closeNativePicker" />
           </div>
+          <button v-else type="button" class="datetime-empty" @click="enableTimeRange">未设置</button>
         </label>
-        <button type="button" class="advanced-search-toggle" @click="advancedSearchOpen = !advancedSearchOpen">{{ advancedSearchOpen ? '收起高级设置' : '高级设置' }}</button>
+        <div class="time-range-actions">
+          <button type="button" class="advanced-search-toggle" @click="advancedSearchOpen = !advancedSearchOpen">{{ advancedSearchOpen ? '收起高级设置' : '高级设置' }}</button>
+          <button v-if="timeRangeEnabled" type="button" class="clear-time-range" @click="clearTimeRange">清除时间</button>
+        </div>
       </div>
       <div v-if="advancedSearchOpen" class="advanced-search-options">
         <label><span>显示前 N 条命中结果</span><select v-model.number="limit"><option :value="20">20 条</option><option :value="100">100 条</option><option :value="1000">1,000 条</option><option :value="10000">10,000 条</option><option :value="100000">100,000 条</option></select></label>
@@ -643,8 +785,12 @@ onMounted(() => {
           {{ exporting ? `正在导出 ${exportProgress} / ${messages.length}` : "导出结果" }}
         </button>
         <button type="button" class="clear-button" :disabled="loading || exporting" @click="resetSearch">重置</button>
-        <button type="submit" class="search-button" :disabled="loading || exporting">
-          {{ loading ? "搜索中…" : "搜索消息" }}
+        <label class="compact-results-toggle">
+          <input v-model="compactResults" type="checkbox" :disabled="loading || exporting" />
+          <span>精简展示大消息（&gt; 1 MB）</span>
+        </label>
+        <button type="button" class="search-button" :disabled="exporting" @click="loading ? cancelSearch() : search()">
+          {{ loading ? "取消搜索" : "搜索消息" }}
         </button>
       </div>
     </form>
@@ -653,6 +799,7 @@ onMounted(() => {
       <span>返回 <strong>{{ messages.length }}</strong> 条</span>
       <span>每页 <strong>{{ pageSize }}</strong> 条</span>
       <span>已扫描 <strong>{{ scanned.toLocaleString() }}</strong> 条</span>
+      <span v-if="searchElapsedMS !== null">搜索用时 <strong>{{ formatSearchElapsed(searchElapsedMS) }}</strong></span>
       <span v-if="truncated" class="scan-warning">已达到 {{ scanLimit.toLocaleString() }} 条查询上限，请缩小时间范围或提高上限</span>
     </div>
 
@@ -685,13 +832,13 @@ onMounted(() => {
           </button>
         </div>
         <div class="message-content">
-          <pre @click.stop>{{ expanded.has(messageId(message)) ? message.value : preview(message.value) }}</pre>
-          <button type="button" @click.stop="copyText(message.value, `value-${messageId(message)}`)">
+          <pre @click.stop>{{ loadingMessageIDs.has(messageId(message)) ? "正在读取完整内容…" : (expanded.has(messageId(message)) ? message.value : preview(displayedMessageValue(message))) }}</pre>
+          <button type="button" :disabled="message.valueOmitted" @click.stop="copyText(message.value, `value-${messageId(message)}`)">
             {{ copied === `value-${messageId(message)}` ? "已复制" : "复制内容" }}
           </button>
         </div>
-        <footer v-if="message.value.length > 240">
-          {{ expanded.has(messageId(message)) ? "收起内容" : "展开完整内容" }}
+        <footer v-if="message.valueOmitted || message.value.length > 240">
+          {{ loadingMessageIDs.has(messageId(message)) ? "正在加载完整内容…" : (message.valueOmitted ? "内容较大，点击加载完整内容" : (expanded.has(messageId(message)) ? "收起内容" : "展开完整内容")) }}
         </footer>
       </article>
       <AppPagination

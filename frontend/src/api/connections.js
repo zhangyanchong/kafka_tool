@@ -24,11 +24,12 @@ export async function testConnection(payload) {
         throw new Error(body.message || "连接测试失败");
     return body;
 }
-async function postKafka(path, payload) {
+async function postKafka(path, payload, signal) {
     const response = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal,
     });
     const body = await readResponse(response);
     if (!response.ok)
@@ -53,10 +54,34 @@ export function recreateTopic(topic, payload) {
 export function createTopic(topic, payload, partitions, replicationFactor) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/create`, { ...payload, partitions, replicationFactor });
 }
-export function searchTopicMessages(topic, payload, search) {
+export function searchTopicMessages(topic, payload, search, signal) {
     return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
         ...payload,
         ...search,
+    }, signal);
+}
+export function startTopicMessageSearch(topic, payload, search) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/start`, {
+        ...payload,
+        ...search,
+    });
+}
+export async function fetchTopicMessageSearchStatus(topic, taskID) {
+    const response = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}`);
+    const body = await readResponse(response);
+    if (!response.ok)
+        throw new Error(body.message || "读取搜索进度失败");
+    return body;
+}
+export function cancelTopicMessageSearch(topic, taskID) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}/cancel`, {});
+}
+export function fetchTopicMessageEstimate(topic, payload) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/estimate`, payload);
+}
+export function readTopicMessage(topic, payload, partition, offset) {
+    return postKafka(`/api/v1/topics/${encodeURIComponent(topic)}/messages/read`, {
+        ...payload, partition, offset,
     });
 }
 export function produceTopicMessage(topic, payload, key, value) {

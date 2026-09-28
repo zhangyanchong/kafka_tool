@@ -26,13 +26,14 @@ type APIResponse struct {
 
 type MessageSearchRequest struct {
 	ConnectionRequest
-	FromTime   string                   `json:"fromTime"`
-	ToTime     string                   `json:"toTime"`
-	Keyword    string                   `json:"keyword"`
-	Conditions []MessageSearchCondition `json:"conditions"`
-	MatchAny   bool                     `json:"matchAny"`
-	Limit      int                      `json:"limit"`
-	ScanLimit  int                      `json:"scanLimit"`
+	FromTime       string                   `json:"fromTime"`
+	ToTime         string                   `json:"toTime"`
+	Keyword        string                   `json:"keyword"`
+	Conditions     []MessageSearchCondition `json:"conditions"`
+	MatchAny       bool                     `json:"matchAny"`
+	Limit          int                      `json:"limit"`
+	ScanLimit      int                      `json:"scanLimit"`
+	CompactResults bool                     `json:"compactResults"`
 }
 
 type MessageSearchCondition struct {
@@ -139,12 +140,20 @@ type TopicHealthResponse struct {
 }
 
 type MessageItem struct {
-	Partition int32  `json:"partition"`
-	Offset    int64  `json:"offset"`
-	Timestamp string `json:"timestamp"`
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	Size      int    `json:"size"`
+	Partition    int32  `json:"partition"`
+	Offset       int64  `json:"offset"`
+	Timestamp    string `json:"timestamp"`
+	Key          string `json:"key"`
+	Value        string `json:"value"`
+	Size         int    `json:"size"`
+	Preview      string `json:"preview,omitempty"`
+	ValueOmitted bool   `json:"valueOmitted,omitempty"`
+}
+
+type MessageReadRequest struct {
+	ConnectionRequest
+	Partition int32 `json:"partition"`
+	Offset    int64 `json:"offset"`
 }
 
 type MessageSearchResponse struct {
@@ -154,6 +163,11 @@ type MessageSearchResponse struct {
 	Scanned           int           `json:"scanned"`
 	Truncated         bool          `json:"truncated"`
 	EstimatedMessages *int64        `json:"estimatedMessages,omitempty"`
+}
+
+type TopicMessageEstimateResponse struct {
+	Topic             string `json:"topic"`
+	EstimatedMessages *int64 `json:"estimatedMessages"`
 }
 
 type ConsumerItem struct {

@@ -17,6 +17,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
+const compactMessageThreshold = 1 << 20
+const compactMessagePreviewBytes = 4096
+
 func FindTopics(ctx context.Context, client *kgo.Client) (model.TopicListResponse, error) {
 	metadata, err := (&kmsg.MetadataRequest{}).RequestWith(ctx, client)
 	if err != nil {
@@ -441,6 +444,16 @@ func topicPartitionHealthItem(partition kadm.PartitionDetail) model.TopicPartiti
 }
 
 func FindMessages(ctx context.Context, client *kgo.Client, topic string, req model.MessageSearchRequest, fromTime, toTime time.Time) (model.MessageSearchResponse, error) {
+	return findMessages(ctx, client, topic, req, fromTime, toTime, nil)
+}
+
+// FindMessagesWithProgress behaves like FindMessages and reports the number of
+// records scanned as it advances. The callback must return quickly.
+func FindMessagesWithProgress(ctx context.Context, client *kgo.Client, topic string, req model.MessageSearchRequest, fromTime, toTime time.Time, progress func(int)) (model.MessageSearchResponse, error) {
+	return findMessages(ctx, client, topic, req, fromTime, toTime, progress)
+}
+
+func findMessages(ctx context.Context, client *kgo.Client, topic string, req model.MessageSearchRequest, fromTime, toTime time.Time, progress func(int)) (model.MessageSearchResponse, error) {
 	admin := kadm.NewClient(client)
 	startOffsets, err := admin.ListStartOffsets(ctx, topic)
 	if err != nil {
@@ -509,7 +522,7 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	}
 	client.AddConsumePartitions(assignments)
 
-	items, scanned, truncated, err := pollMessages(ctx, client, req, endBounds)
+	items, scanned, truncated, err := pollMessages(ctx, client, req, endBounds, progress)
 	if err != nil {
 		return model.MessageSearchResponse{}, err
 	}
@@ -517,10 +530,58 @@ func FindMessages(ctx context.Context, client *kgo.Client, topic string, req mod
 	if len(items) > req.Limit {
 		items = items[:req.Limit]
 	}
+	if req.CompactResults {
+		compactMessageItems(items)
+	}
 	return model.MessageSearchResponse{
 		Topic: topic, Items: items, Total: len(items), Scanned: scanned, Truncated: truncated,
 		EstimatedMessages: estimatedMessages,
 	}, nil
+}
+
+func compactMessageItems(items []model.MessageItem) {
+	for index := range items {
+		if len(items[index].Value) <= compactMessageThreshold {
+			continue
+		}
+		preview := items[index].Value
+		if len(preview) > compactMessagePreviewBytes {
+			preview = preview[:compactMessagePreviewBytes]
+		}
+		items[index].Preview = preview
+		items[index].Value = ""
+		items[index].ValueOmitted = true
+	}
+}
+
+// ReadMessage reads one exact record for lazy display or complete export.
+func ReadMessage(ctx context.Context, client *kgo.Client, topic string, partition int32, offset int64) (model.MessageItem, error) {
+	client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		topic: {partition: kgo.NewOffset().At(offset)},
+	})
+	for {
+		fetches := client.PollRecords(ctx, 1)
+		if ctx.Err() != nil {
+			return model.MessageItem{}, fmt.Errorf("读取消息超时：%s", ctx.Err())
+		}
+		if fetches.IsClientClosed() {
+			return model.MessageItem{}, errors.New("Kafka 客户端在读取消息时已关闭")
+		}
+		if errs := fetches.Errors(); len(errs) > 0 {
+			return model.MessageItem{}, fmt.Errorf("读取消息失败：%s", FriendlyKafkaError(errs[0].Err))
+		}
+		var item model.MessageItem
+		found := false
+		fetches.EachRecord(func(record *kgo.Record) {
+			if record.Topic == topic && record.Partition == partition && record.Offset == offset {
+				item = messageItemFromRecord(record)
+				found = true
+			}
+		})
+		if found {
+			return item, nil
+		}
+	}
 }
 
 func tailScanQuota(total, partitionCount, partitionIndex int) int {
@@ -575,7 +636,25 @@ func estimatedTopicMessages(topic string, startOffsets, endOffsets kadm.ListedOf
 	return &total
 }
 
-func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSearchRequest, endBounds map[int32]int64) ([]model.MessageItem, int, bool, error) {
+// EstimateTopicMessages only reads partition offsets. It never fetches message
+// keys or values, so large records do not make this query expensive.
+func EstimateTopicMessages(ctx context.Context, client *kgo.Client, topic string) (model.TopicMessageEstimateResponse, error) {
+	admin := kadm.NewClient(client)
+	startOffsets, err := admin.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return model.TopicMessageEstimateResponse{}, fmt.Errorf("读取 Topic 起始位置失败：%s", FriendlyKafkaError(err))
+	}
+	endOffsets, err := admin.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return model.TopicMessageEstimateResponse{}, fmt.Errorf("读取 Topic 结束位置失败：%s", FriendlyKafkaError(err))
+	}
+	return model.TopicMessageEstimateResponse{
+		Topic:             topic,
+		EstimatedMessages: estimatedTopicMessages(topic, startOffsets, endOffsets),
+	}, nil
+}
+
+func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSearchRequest, endBounds map[int32]int64, progress func(int)) ([]model.MessageItem, int, bool, error) {
 	items := make([]model.MessageItem, 0, req.Limit)
 	done := make(map[int32]bool)
 	scanned := 0
@@ -600,6 +679,9 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 				return
 			}
 			scanned++
+			if progress != nil {
+				progress(scanned)
+			}
 			if record.Offset+1 >= endAt {
 				done[record.Partition] = true
 			}
@@ -616,6 +698,16 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 		})
 	}
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
+}
+
+func messageItemFromRecord(record *kgo.Record) model.MessageItem {
+	return model.MessageItem{
+		Partition: record.Partition, Offset: record.Offset,
+		Timestamp: record.Timestamp.Format(time.RFC3339Nano),
+		Key:       strings.ToValidUTF8(string(record.Key), "�"),
+		Value:     strings.ToValidUTF8(string(record.Value), "�"),
+		Size:      len(record.Key) + len(record.Value),
+	}
 }
 
 func matchesMessageSearch(req model.MessageSearchRequest, key, value string) bool {

@@ -21,8 +21,8 @@ const defaults = {
 function createId() {
     return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
-function withoutPasswords(payload) {
-    return { ...payload, brokers: [...payload.brokers], password: "", sshPassword: "" };
+function withoutKafkaPassword(payload) {
+    return { ...payload, brokers: [...payload.brokers], password: "" };
 }
 function loadConnections() {
     try {
@@ -30,7 +30,7 @@ function loadConnections() {
         if (Array.isArray(saved)) {
             return saved.map((item) => ({
                 ...item,
-                config: withoutPasswords({ ...defaults, ...item.config }),
+                config: withoutKafkaPassword({ ...defaults, ...item.config }),
             }));
         }
     }
@@ -41,7 +41,7 @@ function loadConnections() {
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (!legacy)
             return [];
-        const config = withoutPasswords({ ...defaults, ...JSON.parse(legacy) });
+        const config = withoutKafkaPassword({ ...defaults, ...JSON.parse(legacy) });
         const migrated = [{ id: createId(), config, brokerCount: 0, lastConnectedAt: "" }];
         localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
         return migrated;
@@ -57,7 +57,7 @@ export const useConnectionStore = defineStore("connection", () => {
     const initialConnection = connections.value.find((item) => item.id === initialActiveId);
     const activeId = ref(initialConnection?.id || "");
     const editingId = ref("");
-    const form = ref(initialConnection ? withoutPasswords(initialConnection.config) : { ...defaults, brokers: [...defaults.brokers] });
+    const form = ref(initialConnection ? withoutKafkaPassword(initialConnection.config) : { ...defaults, brokers: [...defaults.brokers] });
     const testing = ref(false);
     const result = ref(null);
     const error = ref("");
@@ -82,9 +82,8 @@ export const useConnectionStore = defineStore("connection", () => {
         activeId.value = id;
         const secrets = runtimeSecrets.get(id);
         form.value = {
-            ...withoutPasswords(connection.config),
+            ...withoutKafkaPassword(connection.config),
             password: secrets?.password || "",
-            sshPassword: secrets?.sshPassword || "",
         };
         result.value = connection.lastConnectedAt
             ? { success: true, message: "已选择保存的集群", brokerCount: connection.brokerCount }
@@ -100,9 +99,8 @@ export const useConnectionStore = defineStore("connection", () => {
         editingId.value = id;
         const secrets = runtimeSecrets.get(id);
         form.value = {
-            ...withoutPasswords(connection.config),
+            ...withoutKafkaPassword(connection.config),
             password: secrets?.password || "",
-            sshPassword: secrets?.sshPassword || "",
         };
         result.value = null;
         error.value = "";
@@ -130,15 +128,12 @@ export const useConnectionStore = defineStore("connection", () => {
         const id = editingId.value || activeId.value || createId();
         const saved = {
             id,
-            config: withoutPasswords(form.value),
+            config: withoutKafkaPassword(form.value),
             brokerCount: result.value?.brokerCount || 0,
             lastConnectedAt: new Date().toISOString(),
         };
-        if (form.value.password || form.value.sshPassword) {
-            runtimeSecrets.set(id, {
-                password: form.value.password,
-                sshPassword: form.value.sshPassword,
-            });
+        if (form.value.password) {
+            runtimeSecrets.set(id, { password: form.value.password });
         }
         else {
             runtimeSecrets.delete(id);

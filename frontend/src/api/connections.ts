@@ -57,11 +57,12 @@ export async function testConnection(
   return body;
 }
 
-async function postKafka<T>(path: string, payload: unknown): Promise<T> {
+async function postKafka<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
   const body = await readResponse<T & { message?: string }>(response);
   if (!response.ok) throw new Error(body.message || "读取 Kafka 数据失败");
@@ -182,6 +183,8 @@ export interface KafkaMessage {
   key: string;
   value: string;
   size: number;
+  preview?: string;
+  valueOmitted?: boolean;
 }
 
 export interface ProducedMessage {
@@ -198,6 +201,7 @@ export interface MessageSearch {
   matchAny?: boolean;
   limit: number;
   scanLimit: number;
+  compactResults?: boolean;
 }
 
 export interface MessageSearchCondition {
@@ -268,6 +272,7 @@ export function searchTopicMessages(
   topic: string,
   payload: ConnectionPayload,
   search: MessageSearch,
+  signal?: AbortSignal,
 ) {
   return postKafka<{
     topic: string;
@@ -279,6 +284,55 @@ export function searchTopicMessages(
   }>(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search`, {
     ...payload,
     ...search,
+  }, signal);
+}
+
+export interface MessageSearchTaskStatus {
+  scanned: number;
+  elapsedMs: number;
+  done: boolean;
+  canceled: boolean;
+  error?: string;
+  response?: {
+    topic: string;
+    items: KafkaMessage[];
+    total: number;
+    scanned: number;
+    truncated: boolean;
+  };
+}
+
+export function startTopicMessageSearch(topic: string, payload: ConnectionPayload, search: MessageSearch) {
+  return postKafka<{ taskId: string }>(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/start`, {
+    ...payload,
+    ...search,
+  });
+}
+
+export async function fetchTopicMessageSearchStatus(topic: string, taskID: string) {
+  const response = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}`);
+  const body = await readResponse<MessageSearchTaskStatus & { message?: string }>(response);
+  if (!response.ok) throw new Error(body.message || "读取搜索进度失败");
+  return body;
+}
+
+export function cancelTopicMessageSearch(topic: string, taskID: string) {
+  return postKafka<{ success: boolean }>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}/cancel`,
+    {},
+  );
+}
+
+export function fetchTopicMessageEstimate(topic: string, payload: ConnectionPayload) {
+  return postKafka<{ topic: string; estimatedMessages: number | null }>(
+    `/api/v1/topics/${encodeURIComponent(topic)}/messages/estimate`,
+    payload,
+  );
+}
+
+export function readTopicMessage(topic: string, payload: ConnectionPayload, partition: number, offset: number) {
+  return postKafka<KafkaMessage>(`/api/v1/topics/${encodeURIComponent(topic)}/messages/read`, {
+    ...payload, partition, offset,
   });
 }
 
