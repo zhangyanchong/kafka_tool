@@ -56,6 +56,29 @@ chmod +x scripts/build-apps.sh
 应用未使用开发者证书或商店签名，只适合本地使用；首次打开时，系统可能显示安全确认。
 Mac 用户双击打开 DMG 后，把 `KafkaTool.app` 拖到 `Applications` 文件夹即可。
 
+## 麒麟 Linux ARM64 打包
+
+1. 在 Mac 上启动 Docker Desktop，在项目根目录执行：
+
+   ```bash
+   bash scripts/build-linux-arm64-docker.sh
+   ```
+
+   首次需要下载依赖，耗时较长；后续会复用缓存。无需 UTM。
+
+2. 将 `release/KafkaTool-Linux-arm64.tar.gz` 复制到 ARM64 麒麟机器上解压。
+   同名 `.sha256` 是可选校验文件，不是程序。
+
+3. 打开解压后的 `bin` 文件夹，双击 `KafkaTool` 启动（需文件管理器支持）。
+   若提示没有执行权限，在文件属性中勾选“允许作为程序执行”。
+   如果双击打不开，在解压后的文件夹打开终端运行，查看错误提示：
+
+   ```bash
+   bash launch.sh
+   ```
+
+目标系统需具备兼容的 GTK3 和 WebKit2GTK 4.0，详细说明见包内 `README.txt`。
+
 ## Kafka 操作范围
 
 本工具支持查询、展示、搜索、创建 Topic、向指定 Topic 添加单条消息，以及显式确认后的 Topic 删除、按原分区和副本数重建、Consumer Group 删除。
