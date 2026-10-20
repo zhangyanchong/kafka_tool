@@ -35,7 +35,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    const detail = text.trim().replace(/\s+/g, " ").slice(0, 160);
+    const detail = text.trim();
     throw new Error(
       response.status === 404
         ? "后端接口不存在，请重启最新版本的 Go 服务"
@@ -44,21 +44,68 @@ async function readResponse<T>(response: Response): Promise<T> {
   }
 }
 
+interface DesktopAPI {
+  Request: (method: string, path: string, body: string) => Promise<{ status: number; body: string }>;
+}
+
+async function requestDesktop(api: DesktopAPI, path: string, init?: RequestInit): Promise<Response> {
+  const signal = init?.signal;
+  signal?.throwIfAborted();
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal) {
+      onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+  try {
+    const result = await Promise.race([
+      api.Request(init?.method ?? "GET", path, String(init?.body ?? "")),
+      aborted,
+    ]);
+    return new Response(result.body, {
+      status: result.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  } finally {
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+// Keep transport failures distinct from Kafka errors returned by the backend.
+async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    const api = typeof window === "undefined" ? undefined :
+      (window as unknown as { go?: { main?: { APIBridge?: DesktopAPI } } }).go?.main?.APIBridge;
+    return api ? await requestDesktop(api, path, init) : await fetch(path, init);
+  } catch (reason) {
+    if (init?.signal?.aborted || (reason instanceof Error && reason.name === "AbortError")) {
+      throw reason;
+    }
+    const detail = reason instanceof Error ? reason.message : String(reason);
+    throw new Error(
+      `界面未能获取程序后端的响应，暂时无法确认 Kafka 连接结果。` +
+      `请通过 bash launch.sh 启动并重试，查看终端及启动日志。` +
+      `接口：${path}；原始错误：${detail}`,
+    );
+  }
+}
+
 export async function testConnection(
   payload: ConnectionPayload,
 ): Promise<ConnectionResult> {
-  const response = await fetch("/api/v1/connections/test", {
+  const response = await fetchBackend("/api/v1/connections/test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   const body = await readResponse<ConnectionResult>(response);
-  if (!response.ok) throw new Error(body.message || "连接测试失败");
+  if (!response.ok) throw new Error(`${body.message || "连接测试失败"}\nHTTP 状态：${response.status}\n后端响应：${JSON.stringify(body, null, 2)}`);
   return body;
 }
 
 async function postKafka<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetchBackend(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -310,7 +357,7 @@ export function startTopicMessageSearch(topic: string, payload: ConnectionPayloa
 }
 
 export async function fetchTopicMessageSearchStatus(topic: string, taskID: string) {
-  const response = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}`);
+  const response = await fetchBackend(`/api/v1/topics/${encodeURIComponent(topic)}/messages/search/${encodeURIComponent(taskID)}`);
   const body = await readResponse<MessageSearchTaskStatus & { message?: string }>(response);
   if (!response.ok) throw new Error(body.message || "读取搜索进度失败");
   return body;

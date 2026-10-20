@@ -9,6 +9,15 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
+const copyStatus = ref("");
+async function copyDiagnostics() {
+  try {
+    await navigator.clipboard.writeText(store.diagnostics);
+    copyStatus.value = "已复制";
+  } catch {
+    copyStatus.value = "复制不可用，请选中下方详情手动复制";
+  }
+}
 const showSSHPassword = ref(false);
 const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
 const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
@@ -30,6 +39,7 @@ onMounted(() => {
 onBeforeUnmount(() => renderTheme(currentTheme.value));
 
 async function submit() {
+  copyStatus.value = "";
   store.form.brokers = brokerText.value
     .split(/[\n,]/)
     .map((item) => item.trim())
@@ -88,9 +98,9 @@ async function submit() {
               rows="3"
               required
               spellcheck="false"
-              placeholder="kafka-01.example.com:9092&#10;kafka-02.example.com:9092"
+              placeholder="192.168.1.101:9092&#10;192.168.1.102:9092&#10;kafka-03.example.com:9092"
             ></textarea>
-            <small>每行一个地址，或使用英文逗号分隔</small>
+            <small>填写 IP 或域名:端口，例如 192.168.1.101:9092。每行一个，或用英文逗号分隔；不要加 http://。</small>
           </label>
 
           <div class="grid">
@@ -192,7 +202,15 @@ async function submit() {
           </div>
           <div v-if="store.error" class="notice error">
             <strong>连接失败</strong>
-            <span>{{ store.error }}</span>
+            <div class="connection-error-content">
+              <p class="connection-error-message">{{ store.error.split("\n")[0] }}</p>
+              <details open v-if="store.diagnostics">
+                <summary>错误详情与排查建议</summary>
+                <button type="button" class="diagnostic-copy" @click="copyDiagnostics">复制诊断信息</button>
+                <span role="status">{{ copyStatus }}</span>
+                <pre tabindex="0">{{ store.diagnostics }}</pre>
+              </details>
+            </div>
           </div>
 
           <button class="submit" type="submit" :disabled="store.testing">
@@ -204,3 +222,11 @@ async function submit() {
     </section>
   </main>
 </template>
+
+<style scoped>
+.connection-error-content { min-width: 0; }
+.connection-error-message { margin: 0 0 8px; overflow-wrap: anywhere; }
+.connection-error-content summary { cursor: pointer; font-weight: 600; }
+.connection-error-content pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto; user-select: text; font: 12px/1.7 monospace; }
+.diagnostic-copy { margin: 10px 8px 0 0; padding: 5px 10px; border: 1px solid currentColor; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+</style>

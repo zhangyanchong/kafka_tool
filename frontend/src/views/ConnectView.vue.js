@@ -7,6 +7,16 @@ const router = useRouter();
 const route = useRoute();
 const brokerText = ref("");
 const showPassword = ref(false);
+const copyStatus = ref("");
+async function copyDiagnostics() {
+    try {
+        await navigator.clipboard.writeText(store.diagnostics);
+        copyStatus.value = "已复制";
+    }
+    catch {
+        copyStatus.value = "复制不可用，请选中下方详情手动复制";
+    }
+}
 const showSSHPassword = ref(false);
 const editing = computed(() => route.query.mode === "edit" && typeof route.query.id === "string");
 const reconnecting = computed(() => !editing.value && typeof route.query.id === "string");
@@ -25,6 +35,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => renderTheme(currentTheme.value));
 async function submit() {
+    copyStatus.value = "";
     store.form.brokers = brokerText.value
         .split(/[\n,]/)
         .map((item) => item.trim())
@@ -40,6 +51,8 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['connection-error-content']} */ ;
+/** @type {__VLS_StyleScopedClasses['connection-error-content']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.main, __VLS_intrinsics.main)({
     ...{ class: "connect-page" },
 });
@@ -161,7 +174,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.textarea, __VLS_intrinsics.textarea)
     rows: "3",
     required: true,
     spellcheck: "false",
-    placeholder: "kafka-01.example.com:9092&#10;kafka-02.example.com:9092",
+    placeholder: "192.168.1.101:9092&#10;192.168.1.102:9092&#10;kafka-03.example.com:9092",
 });
 __VLS_asFunctionalElement1(__VLS_intrinsics.small, __VLS_intrinsics.small)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -345,8 +358,35 @@ if (__VLS_ctx.store.error) {
     /** @type {__VLS_StyleScopedClasses['notice']} */ ;
     /** @type {__VLS_StyleScopedClasses['error']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    (__VLS_ctx.store.error);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "connection-error-content" },
+    });
+    /** @type {__VLS_StyleScopedClasses['connection-error-content']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "connection-error-message" },
+    });
+    /** @type {__VLS_StyleScopedClasses['connection-error-message']} */ ;
+    (__VLS_ctx.store.error.split("\n")[0]);
+    if (__VLS_ctx.store.diagnostics) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.details, __VLS_intrinsics.details)({
+            open: true,
+        });
+        __VLS_asFunctionalElement1(__VLS_intrinsics.summary, __VLS_intrinsics.summary)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (__VLS_ctx.copyDiagnostics) },
+            type: "button",
+            ...{ class: "diagnostic-copy" },
+        });
+        /** @type {__VLS_StyleScopedClasses['diagnostic-copy']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+            role: "status",
+        });
+        (__VLS_ctx.copyStatus);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.pre, __VLS_intrinsics.pre)({
+            tabindex: "0",
+        });
+        (__VLS_ctx.store.diagnostics);
+    }
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ class: "submit" },
@@ -359,6 +399,6 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
 __VLS_asFunctionalElement1(__VLS_intrinsics.b, __VLS_intrinsics.b)({});
 (__VLS_ctx.store.testing ? "···" : "→");
 // @ts-ignore
-[editing, store, store, store, store, store, store, store, store, showSSHPassword,];
+[editing, store, store, store, store, store, store, store, store, store, store, showSSHPassword, copyDiagnostics, copyStatus,];
 const __VLS_export = (await import('vue')).defineComponent({});
 export default {};

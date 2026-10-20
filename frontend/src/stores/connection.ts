@@ -167,7 +167,12 @@ export const useConnectionStore = defineStore("connection", () => {
     persistConnections();
   }
 
+  const diagnostics = ref("");
+
   async function test() {
+    const started = Date.now();
+    const snapshot = { ...form.value, brokers: [...form.value.brokers] };
+    diagnostics.value = "";
     testing.value = true;
     result.value = null;
     error.value = "";
@@ -176,7 +181,32 @@ export const useConnectionStore = defineStore("connection", () => {
       saveCurrentConnection();
       return true;
     } catch (reason) {
-      error.value = reason instanceof Error ? reason.message : "连接失败";
+      let detail = reason instanceof Error ? reason.message : String(reason);
+      for (const secret of [snapshot.password, snapshot.sshPassword]) {
+        if (secret) detail = detail.split(secret).join("[已隐藏]");
+      }
+      error.value = detail;
+      diagnostics.value = [
+        `时间：${new Date(started).toISOString()}`,
+        `耗时：${Date.now() - started} ms；配置超时：${snapshot.connectionTimeoutSeconds} 秒`,
+        `Broker：${snapshot.brokers.join(", ")}`,
+        `安全协议：${snapshot.securityProtocol}；SASL：${snapshot.securityProtocol.startsWith("SASL") ? snapshot.saslMechanism : "未启用"}`,
+        `TLS 跳过证书校验：${snapshot.tlsSkipVerify ? "是" : "否"}`,
+        `SSH：${snapshot.sshEnabled ? snapshot.sshAddress : "未启用"}`,
+        "接口：POST /api/v1/connections/test",
+        "", "错误详情：", detail,
+        "", "排查建议（需结合原始错误判断）：",
+        "• Load failed / Failed to fetch：界面未获取到后端响应，不能据此断定 Kafka 不通。",
+        "• connection refused：检查端口、Kafka 服务监听和防火墙。",
+        "• timeout / deadline exceeded：检查网络、路由、防火墙及连接超时。",
+        "• no such host：检查 Broker 域名及现场 DNS。",
+        "• TLS / x509：检查安全协议、证书信任、证书域名及系统时间。",
+        "• SASL / authentication：检查认证机制、账号、密码与权限。",
+        "• 已连接但读取集群失败：检查 advertised.listeners 返回的各 Broker 地址是否从当前机器可达。",
+        "", "麒麟日志：通过 bash launch.sh 启动，重试后查看终端；",
+        "日志默认位于 ~/.local/state/kafka-tool/（设置 XDG_STATE_HOME 时以该目录为准）。",
+        "查找 connection_test started / failed / succeeded；没有 started 需排查请求是否到达后端。",
+      ].join("\n");
       return false;
     } finally {
       testing.value = false;
@@ -184,6 +214,7 @@ export const useConnectionStore = defineStore("connection", () => {
   }
 
   return {
+    diagnostics,
     connections,
     activeId,
     form,

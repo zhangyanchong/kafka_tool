@@ -58,7 +58,7 @@ func TestConnection(ctx context.Context, req model.ConnectionRequest) (model.API
 	defer cancel()
 	if err := client.Ping(requestContext); err != nil {
 		return model.APIResponse{DurationMS: time.Since(started).Milliseconds()}, &OperationError{
-			StatusCode: 502, Err: fmt.Errorf("连接失败：%s", FriendlyKafkaError(err)),
+			StatusCode: 502, Err: fmt.Errorf("连接失败：%s\n原始错误：%w", FriendlyKafkaError(err), err),
 		}
 	}
 	return connectionMetadata(requestContext, client, started)
