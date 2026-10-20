@@ -1,4 +1,4 @@
-Kafka Tool — Linux ARM64 / 麒麟桌面版
+Kafka Tool — Linux ARM64 / UOS、麒麟桌面版
 
 1. 解压到普通用户可写的目录。在桌面会话的终端运行：
    bash launch.sh
@@ -13,6 +13,10 @@ Kafka Tool — Linux ARM64 / 麒麟桌面版
 
 3. 本包使用系统的 GTK3 和 WebKit2GTK 4.0，未私自替换系统库，
    未禁用 WebKit 沙箱。它不是对所有麒麟版本都通用的无依赖包。
+   Linux 版通过原生通道调用后端接口，不依赖 WebKit 自定义协议传递
+   POST 请求，不限定 WebKit 2.38.6，也不要求为此升级到 2.40。
+   这只解决 API 通信兼容问题；不同发行版仍需检查运行库和现场验收。
+   Windows、macOS 保留原有通信方式。
    若带有 runtime-debs/，这些是人工准备的离线安装包，不会自动安装。
    请由管理员确认发行版、版本、架构及完整依赖匹配后再安装。
    .deb 只适用于兼容的 Debian 系麒麟；RPM 系统不能直接使用。

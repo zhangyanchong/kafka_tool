@@ -44,25 +44,36 @@ async function readResponse<T>(response: Response): Promise<T> {
   }
 }
 
-interface DesktopAPI {
-  Request: (method: string, path: string, body: string) => Promise<{ status: number; body: string }>;
+interface LinuxDesktopAPI {
+  BeginRequest: () => Promise<string>;
+  Request: (id: string, method: string, path: string, body: string) => Promise<{ status: number; body: string }>;
+  CancelRequest: (id: string) => Promise<void>;
 }
 
-async function requestDesktop(api: DesktopAPI, path: string, init?: RequestInit): Promise<Response> {
+async function requestLinuxDesktop(api: LinuxDesktopAPI, path: string, init?: RequestInit): Promise<Response> {
   const signal = init?.signal;
-  signal?.throwIfAborted();
+  const abortReason = () => signal?.reason ?? new DOMException("Aborted", "AbortError");
+  if (signal?.aborted) throw abortReason();
   let onAbort: (() => void) | undefined;
+  let cancelNative: (() => Promise<void>) | undefined;
   const aborted = new Promise<never>((_, reject) => {
     if (signal) {
-      onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      onAbort = () => {
+        void cancelNative?.();
+        reject(abortReason());
+      };
       signal.addEventListener("abort", onAbort, { once: true });
     }
   });
+  const request = async () => {
+    const id = await api.BeginRequest();
+    cancelNative = () => api.CancelRequest(id).catch(() => {});
+    // Dispatch even after cancellation so the native request entry is released.
+    if (signal?.aborted) await cancelNative();
+    return api.Request(id, init?.method ?? "GET", path, String(init?.body ?? ""));
+  };
   try {
-    const result = await Promise.race([
-      api.Request(init?.method ?? "GET", path, String(init?.body ?? "")),
-      aborted,
-    ]);
+    const result = await Promise.race([request(), aborted]);
     return new Response(result.body, {
       status: result.status,
       headers: { "Content-Type": "application/json" },
@@ -76,8 +87,8 @@ async function requestDesktop(api: DesktopAPI, path: string, init?: RequestInit)
 async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
   try {
     const api = typeof window === "undefined" ? undefined :
-      (window as unknown as { go?: { main?: { APIBridge?: DesktopAPI } } }).go?.main?.APIBridge;
-    return api ? await requestDesktop(api, path, init) : await fetch(path, init);
+      (window as unknown as { go?: { main?: { LinuxAPIBridge?: LinuxDesktopAPI } } }).go?.main?.LinuxAPIBridge;
+    return api ? await requestLinuxDesktop(api, path, init) : await fetch(path, init);
   } catch (reason) {
     if (init?.signal?.aborted || (reason instanceof Error && reason.name === "AbortError")) {
       throw reason;

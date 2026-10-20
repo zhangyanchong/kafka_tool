@@ -14,7 +14,7 @@ var assets embed.FS
 
 func main() {
 	app := NewApp()
-	api := NewAPIBridge(server.NewHandler())
+	handler := server.NewHandler()
 	err := wails.Run(&options.App{
 		Title:     "Kafka Tool",
 		Width:     1440,
@@ -23,10 +23,10 @@ func main() {
 		MinHeight: 680,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
-			Handler: api.handler,
+			Handler: handler,
 		},
 		OnStartup:        app.startup,
-		Bind:             []interface{}{app, api},
+		Bind:             desktopBindings(app, handler),
 		BackgroundColour: &options.RGBA{R: 13, G: 16, B: 21, A: 1},
 	})
 

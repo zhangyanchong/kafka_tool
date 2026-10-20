@@ -13,21 +13,32 @@ async function readResponse(response) {
             : `后端返回了非 JSON 数据（HTTP ${response.status}）：${detail}`);
     }
 }
-async function requestDesktop(api, path, init) {
+async function requestLinuxDesktop(api, path, init) {
     const signal = init?.signal;
-    signal?.throwIfAborted();
+    const abortReason = () => signal?.reason ?? new DOMException("Aborted", "AbortError");
+    if (signal?.aborted)
+        throw abortReason();
     let onAbort;
+    let cancelNative;
     const aborted = new Promise((_, reject) => {
         if (signal) {
-            onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+            onAbort = () => {
+                void cancelNative?.();
+                reject(abortReason());
+            };
             signal.addEventListener("abort", onAbort, { once: true });
         }
     });
+    const request = async () => {
+        const id = await api.BeginRequest();
+        cancelNative = () => api.CancelRequest(id).catch(() => { });
+        // Dispatch even after cancellation so the native request entry is released.
+        if (signal?.aborted)
+            await cancelNative();
+        return api.Request(id, init?.method ?? "GET", path, String(init?.body ?? ""));
+    };
     try {
-        const result = await Promise.race([
-            api.Request(init?.method ?? "GET", path, String(init?.body ?? "")),
-            aborted,
-        ]);
+        const result = await Promise.race([request(), aborted]);
         return new Response(result.body, {
             status: result.status,
             headers: { "Content-Type": "application/json" },
@@ -42,8 +53,8 @@ async function requestDesktop(api, path, init) {
 async function fetchBackend(path, init) {
     try {
         const api = typeof window === "undefined" ? undefined :
-            window.go?.main?.APIBridge;
-        return api ? await requestDesktop(api, path, init) : await fetch(path, init);
+            window.go?.main?.LinuxAPIBridge;
+        return api ? await requestLinuxDesktop(api, path, init) : await fetch(path, init);
     }
     catch (reason) {
         if (init?.signal?.aborted || (reason instanceof Error && reason.name === "AbortError")) {
