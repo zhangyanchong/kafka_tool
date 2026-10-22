@@ -234,7 +234,15 @@ export interface ConsumerMember {
   assignments: ConsumerMemberAssignment[];
 }
 
+export interface KafkaMessageHeader {
+  key: string;
+  value: string;
+  binary?: boolean;
+  null?: boolean;
+}
+
 export interface KafkaMessage {
+  headers?: KafkaMessageHeader[];
   partition: number;
   offset: number;
   timestamp: string;

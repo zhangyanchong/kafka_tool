@@ -139,15 +139,23 @@ type TopicHealthResponse struct {
 	Items                     []TopicPartitionHealthItem `json:"items"`
 }
 
+type MessageHeader struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Binary bool   `json:"binary,omitempty"`
+	Null   bool   `json:"null,omitempty"`
+}
+
 type MessageItem struct {
-	Partition    int32  `json:"partition"`
-	Offset       int64  `json:"offset"`
-	Timestamp    string `json:"timestamp"`
-	Key          string `json:"key"`
-	Value        string `json:"value"`
-	Size         int    `json:"size"`
-	Preview      string `json:"preview,omitempty"`
-	ValueOmitted bool   `json:"valueOmitted,omitempty"`
+	Headers      []MessageHeader `json:"headers"`
+	Partition    int32           `json:"partition"`
+	Offset       int64           `json:"offset"`
+	Timestamp    string          `json:"timestamp"`
+	Key          string          `json:"key"`
+	Value        string          `json:"value"`
+	Size         int             `json:"size"`
+	Preview      string          `json:"preview,omitempty"`
+	ValueOmitted bool            `json:"valueOmitted,omitempty"`
 }
 
 type MessageReadRequest struct {

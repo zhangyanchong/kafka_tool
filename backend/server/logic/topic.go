@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"kafka-tool/backend/server/model"
 	"kafka-tool/backend/server/tools"
@@ -690,18 +692,36 @@ func pollMessages(ctx context.Context, client *kgo.Client, req model.MessageSear
 			if !matchesMessageSearch(req, key, value) {
 				return
 			}
-			items = append(items, model.MessageItem{
-				Partition: record.Partition, Offset: record.Offset,
-				Timestamp: record.Timestamp.Format(time.RFC3339Nano),
-				Key:       key, Value: value, Size: len(record.Key) + len(record.Value),
-			})
+			items = append(items, messageItemFromRecord(record))
 		})
 	}
 	return items, scanned, scanned >= req.ScanLimit && len(done) < len(endBounds), nil
 }
 
+func messageHeadersFromRecord(record *kgo.Record) []model.MessageHeader {
+	headers := make([]model.MessageHeader, 0, len(record.Headers))
+	for _, header := range record.Headers {
+		item := model.MessageHeader{Key: header.Key, Null: header.Value == nil}
+		item.Binary = !utf8.Valid(header.Value)
+		if !item.Binary {
+			for _, r := range string(header.Value) {
+				if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+					item.Binary = true
+					break
+				}
+			}
+		}
+		if !item.Binary {
+			item.Value = string(header.Value)
+		}
+		headers = append(headers, item)
+	}
+	return headers
+}
+
 func messageItemFromRecord(record *kgo.Record) model.MessageItem {
 	return model.MessageItem{
+		Headers:   messageHeadersFromRecord(record),
 		Partition: record.Partition, Offset: record.Offset,
 		Timestamp: record.Timestamp.Format(time.RFC3339Nano),
 		Key:       strings.ToValidUTF8(string(record.Key), "�"),

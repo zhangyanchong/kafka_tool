@@ -586,6 +586,14 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+/** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "list-page" },
 });
@@ -1248,6 +1256,73 @@ if (__VLS_ctx.messages.length) {
         (__VLS_ctx.formatTime(message.timestamp));
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         (__VLS_ctx.formatBytes(message.size));
+        __VLS_asFunctionalElement1(__VLS_intrinsics.details, __VLS_intrinsics.details)({
+            ...{ onClick: () => { } },
+            ...{ class: "message-headers" },
+        });
+        /** @type {__VLS_StyleScopedClasses['message-headers']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.summary, __VLS_intrinsics.summary)({});
+        (message.headers?.length || 0);
+        if (message.headers?.length) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.messages.length))
+                            throw 0;
+                        if (!(message.headers?.length))
+                            throw 0;
+                        return (__VLS_ctx.copyText(JSON.stringify(message.headers.map(header => ({ key: header.key, value: header.binary ? '二进制内容' : header.null ? null : header.value })), null, 2), `headers-${__VLS_ctx.messageId(message)}`));
+                        // @ts-ignore
+                        [messageId, messageId, formatTime, formatBytes, copyText,];
+                    } },
+                type: "button",
+            });
+            (__VLS_ctx.copied === `headers-${__VLS_ctx.messageId(message)}` ? '已复制' : '复制全部 Headers');
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "message-headers-scroll" },
+            });
+            /** @type {__VLS_StyleScopedClasses['message-headers-scroll']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.table, __VLS_intrinsics.table)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.thead, __VLS_intrinsics.thead)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.tbody, __VLS_intrinsics.tbody)({});
+            for (const [header, index] of __VLS_vFor((message.headers))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({
+                    key: (index),
+                });
+                __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.code, __VLS_intrinsics.code)({});
+                (header.key);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.pre, __VLS_intrinsics.pre)({});
+                (header.binary ? '二进制内容' : header.null ? 'null（无值）' : header.value === '' ? '（空字符串）' : header.value);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
+                if (!header.binary && !header.null) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.messages.length))
+                                    throw 0;
+                                if (!(message.headers?.length))
+                                    throw 0;
+                                if (!(!header.binary && !header.null))
+                                    throw 0;
+                                return (__VLS_ctx.copyText(header.value, `header-${__VLS_ctx.messageId(message)}-${index}`));
+                                // @ts-ignore
+                                [messageId, messageId, copyText, copied,];
+                            } },
+                        type: "button",
+                    });
+                    (__VLS_ctx.copied === `header-${__VLS_ctx.messageId(message)}-${index}` ? '已复制' : '复制值');
+                }
+                // @ts-ignore
+                [messageId, copied,];
+            }
+        }
+        else {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        }
         if (message.key) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "message-key" },
@@ -1266,7 +1341,7 @@ if (__VLS_ctx.messages.length) {
                             throw 0;
                         return (__VLS_ctx.copyText(message.key, `key-${__VLS_ctx.messageId(message)}`));
                         // @ts-ignore
-                        [messageId, messageId, formatTime, formatBytes, copyText,];
+                        [messageId, copyText,];
                     } },
                 type: "button",
             });

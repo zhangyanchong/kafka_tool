@@ -8,6 +8,7 @@ import (
 	"kafka-tool/backend/server/model"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -168,5 +169,40 @@ func TestTopicPartitionHealthItemReportsAllProblems(t *testing.T) {
 	}
 	if item.ErrorMessage == "" {
 		t.Fatal("partition error message was not preserved")
+	}
+}
+
+func TestMessageHeadersPreserveOrderAndValues(t *testing.T) {
+	record := &kgo.Record{Key: []byte("key"), Value: []byte("body"), Headers: []kgo.RecordHeader{
+		{Key: "trace", Value: []byte("中文\nvalue")},
+		{Key: "trace", Value: []byte("")},
+		{Key: "null", Value: nil},
+		{Key: "binary", Value: []byte{0xff}},
+		{Key: "control", Value: []byte{0}},
+	}}
+	item := messageItemFromRecord(record)
+	if len(item.Headers) != 5 {
+		t.Fatalf("headers = %v", item.Headers)
+	}
+	if item.Headers[0].Key != "trace" || item.Headers[0].Value != "中文\nvalue" || item.Headers[0].Binary {
+		t.Fatal("text header changed")
+	}
+	if item.Headers[1].Key != "trace" || item.Headers[1].Null || item.Headers[1].Value != "" {
+		t.Fatal("duplicate or empty header changed")
+	}
+	if !item.Headers[2].Null {
+		t.Fatal("null header lost")
+	}
+	for _, header := range item.Headers[3:] {
+		if !header.Binary || header.Value != "" {
+			t.Fatal("binary header should be labeled without text conversion")
+		}
+	}
+	if item.Key != "key" || item.Value != "body" || item.Size != 7 {
+		t.Fatal("existing message fields changed")
+	}
+	compactMessageItems([]model.MessageItem{item})
+	if len(messageItemFromRecord(&kgo.Record{}).Headers) != 0 {
+		t.Fatal("expected no headers")
 	}
 }

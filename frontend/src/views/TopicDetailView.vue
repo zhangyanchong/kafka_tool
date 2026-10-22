@@ -824,6 +824,25 @@ onUnmounted(cancelSearch);
             <span>{{ formatBytes(message.size) }}</span>
           </div>
         </header>
+        <details class="message-headers" @click.stop>
+          <summary>Headers（{{ message.headers?.length || 0 }}）</summary>
+          <template v-if="message.headers?.length">
+            <button type="button" @click.stop="copyText(JSON.stringify(message.headers.map(header => ({ key: header.key, value: header.binary ? '二进制内容' : header.null ? null : header.value })), null, 2), `headers-${messageId(message)}`)">{{ copied === `headers-${messageId(message)}` ? '已复制' : '复制全部 Headers' }}</button>
+            <div class="message-headers-scroll">
+              <table>
+                <thead><tr><th>名称</th><th>值</th><th></th></tr></thead>
+                <tbody>
+                  <tr v-for="(header, index) in message.headers" :key="index">
+                    <td><code>{{ header.key }}</code></td>
+                    <td><pre>{{ header.binary ? '二进制内容' : header.null ? 'null（无值）' : header.value === '' ? '（空字符串）' : header.value }}</pre></td>
+                    <td><button v-if="!header.binary && !header.null" type="button" @click.stop="copyText(header.value, `header-${messageId(message)}-${index}`)">{{ copied === `header-${messageId(message)}-${index}` ? '已复制' : '复制值' }}</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p v-else>无 Headers</p>
+        </details>
         <div v-if="message.key" class="message-key">
           <b>KEY</b>
           <code @click.stop>{{ message.key }}</code>
@@ -879,3 +898,14 @@ onUnmounted(cancelSearch);
     </div>
   </section>
 </template>
+
+<style scoped>
+.message-headers { padding: 10px 15px; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-size: 12px; }
+.message-headers summary { cursor: pointer; }
+.message-headers button { margin: 8px 0; padding: 4px 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 5px; color: inherit; background: transparent; cursor: pointer; }
+.message-headers-scroll { overflow-x: auto; }
+.message-headers table { width: 100%; border-collapse: collapse; text-align: left; }
+.message-headers th, .message-headers td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.message-headers pre, .message-headers code { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.message-headers td:last-child { width: 70px; white-space: nowrap; }
+</style>
