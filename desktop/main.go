@@ -13,9 +13,15 @@ import (
 var assets embed.FS
 
 func main() {
+	windowsOptions, err := desktopWindowsOptions()
+	if err != nil {
+		reportRuntimeError(err)
+		return
+	}
 	app := NewApp()
 	handler := server.NewHandler()
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
+		Windows:   windowsOptions,
 		Title:     "Kafka Tool",
 		Width:     1440,
 		Height:    900,

@@ -18,6 +18,8 @@ import {
   type TopicHealthIssue,
 } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
+import { readMessageLines } from "@/utils/messageImport";
+import MessageText from "@/components/MessageText.vue";
 import AppPagination from "@/components/AppPagination.vue";
 import { alertDialog, confirmDialog } from "@/dialog";
 
@@ -89,6 +91,58 @@ const pendingTopicAction = ref<"delete" | "recreate" | null>(null);
 const confirmedTopicAction = ref<"delete" | "recreate" | null>(null);
 const showProduceForm = ref(false);
 const producing = ref(false);
+const produceMode = ref("text");
+const importFile = ref<File | null>(null);
+const importing = ref(false);
+const importProgress = ref("");
+const stopImport = ref(false);
+
+function selectImportFile(event: Event) {
+  importFile.value = (event.target as HTMLInputElement).files?.[0] ?? null;
+  importProgress.value = "";
+  produceError.value = "";
+  produceSuccess.value = "";
+}
+
+async function importMessages() {
+  const file = importFile.value;
+  if (!file || producing.value) return;
+  const targetTopic = topic.value;
+  if (!await confirmDialog("确认导入文件？", `将文件“${file.name}”按每行一条消息写入 Topic “${targetTopic}”，跳过空白行。写入后无法撤销。`, "开始导入")) return;
+  if (producing.value) return;
+  const payload = { ...connection.form, brokers: [...connection.form.brokers] };
+  const key = messageKey.value;
+  producing.value = true;
+  importing.value = true;
+  stopImport.value = false;
+  produceError.value = "";
+  produceSuccess.value = "";
+  let sent = 0;
+  let lineNumber = 0;
+  let inFlight = false;
+  try {
+    for await (const line of readMessageLines(file)) {
+      if (stopImport.value) break;
+      lineNumber = line.lineNumber;
+      if (!line.value.trim()) continue;
+      importProgress.value = `正在发送第 ${lineNumber} 行，已成功 ${sent} 条`;
+      inFlight = true;
+      await produceTopicMessage(targetTopic, payload, key, line.value);
+      inFlight = false;
+      sent++;
+    }
+    importProgress.value = `${stopImport.value ? "已停止" : "导入完成"}：已成功发送 ${sent} 条，已处理至第 ${lineNumber} 行`;
+    if (sent) produceSuccess.value = `文件导入已写入 ${sent} 条消息`;
+  } catch (reason) {
+    const detail = reason instanceof Error ? reason.message : "文件读取或发送失败";
+    produceError.value = `导入停止：已成功 ${sent} 条。${inFlight ? `第 ${lineNumber} 行发送失败，结果可能需要核实，请勿直接重复导入整个文件。` : "请检查文件编码、行大小及内容。"} ${detail}`;
+  } finally {
+    producing.value = false;
+    importing.value = false;
+    if (sent && topic.value === targetTopic) await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
+  }
+}
+
 const messageKey = ref("");
 const messageValue = ref("");
 const produceError = ref("");
@@ -370,6 +424,7 @@ function openProduceForm() {
 
 async function produceMessage() {
   if (producing.value) return;
+  if (produceMode.value === "file") return importMessages();
   if (!messageValue.value.trim()) {
     produceError.value = "消息内容不能为空";
     return;
@@ -613,7 +668,8 @@ onMounted(() => {
   search();
 });
 
-onUnmounted(cancelSearch);
+onUnmounted(() => { stopImport.value = true; cancelSearch(); });
+watch(topic, () => { stopImport.value = true; });
 </script>
 
 <template>
@@ -637,15 +693,34 @@ onUnmounted(cancelSearch);
       </div>
       <label>
         <span>Key（可选）</span>
-        <input v-model="messageKey" placeholder="留空则发送无 Key 消息" />
+        <input v-model="messageKey" :disabled="producing" placeholder="留空则发送无 Key 消息" />
       </label>
       <label>
-        <span>消息内容</span>
-        <textarea v-model="messageValue" rows="6" required placeholder="输入文本或 JSON 数据" />
+        <span>输入方式</span>
+        <select v-model="produceMode" :disabled="producing">
+          <option value="text">输入单条消息</option>
+          <option value="file">文件导入（每行一条）</option>
+        </select>
       </label>
+      <label v-if="produceMode === 'text'">
+        <span>消息内容</span>
+        <textarea v-model="messageValue" :disabled="producing" rows="6" required placeholder="输入文本或 JSON 数据" />
+      </label>
+      <template v-else>
+        <label>
+          <span>选择文件</span>
+          <input type="file" :disabled="producing" required @change="selectImportFile" />
+        </label>
+        <p>支持 UTF-8 文本 / JSONL，每行一条，跳过空白行，单行最大 20 MiB。所有消息使用上方 Key；多行排版的 JSON 请先转成一行一条。</p>
+        <p v-if="importFile">{{ importFile.name }}（{{ formatBytes(importFile.size) }}）</p>
+        <p v-if="importProgress" role="status">{{ importProgress }}</p>
+      </template>
       <p v-if="produceError" class="produce-feedback error">{{ produceError }}</p>
       <p v-if="produceSuccess" class="produce-feedback success"><strong>✓ {{ produceSuccess }}</strong><span>消息已由 Kafka 确认接收。</span></p>
-      <div class="produce-actions"><button class="topic-produce-button" type="submit" :disabled="producing">{{ producing ? "保存中…" : "保存并发送" }}</button></div>
+      <div class="produce-actions">
+        <button v-if="importing" type="button" :disabled="stopImport" @click="stopImport = true; importProgress = '正在停止，等待当前消息发送结束…'">停止导入</button>
+        <button class="topic-produce-button" type="submit" :disabled="producing">{{ producing ? (importing ? "导入中…" : "保存中…") : (produceMode === 'file' ? "导入并发送" : "保存并发送") }}</button>
+      </div>
     </form>
 
     <div class="summary-grid topic-health-summary">
@@ -851,7 +926,7 @@ onUnmounted(cancelSearch);
           </button>
         </div>
         <div class="message-content">
-          <pre @click.stop>{{ loadingMessageIDs.has(messageId(message)) ? "正在读取完整内容…" : (expanded.has(messageId(message)) ? message.value : preview(displayedMessageValue(message))) }}</pre>
+          <MessageText :value="loadingMessageIDs.has(messageId(message)) ? '正在读取完整内容…' : (expanded.has(messageId(message)) ? message.value : preview(displayedMessageValue(message)))" />
           <button type="button" :disabled="message.valueOmitted" @click.stop="copyText(message.value, `value-${messageId(message)}`)">
             {{ copied === `value-${messageId(message)}` ? "已复制" : "复制内容" }}
           </button>

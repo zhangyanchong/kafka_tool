@@ -65,7 +65,7 @@ func TestConnection(ctx context.Context, req model.ConnectionRequest) (model.API
 }
 
 func kafkaClientOptions(req model.ConnectionRequest, timeout time.Duration) ([]kgo.Opt, error) {
-	options := []kgo.Opt{kgo.SeedBrokers(req.Brokers...), kgo.DialTimeout(timeout), kgo.RequestTimeoutOverhead(timeout)}
+	options := []kgo.Opt{kgo.SeedBrokers(req.Brokers...), kgo.ProducerBatchMaxBytes(32 << 20), kgo.DialTimeout(timeout), kgo.RequestTimeoutOverhead(timeout)}
 	if req.SSHEnabled {
 		options = append(options, kgo.Dialer(sshProxyDialer(req, timeout)))
 	} else if usesTLS(req) {

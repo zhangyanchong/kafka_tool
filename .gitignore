@@ -9,3 +9,4 @@ desktop/frontend/dist/
 *.log
 .cache/
 *.tsbuildinfo
+/release/

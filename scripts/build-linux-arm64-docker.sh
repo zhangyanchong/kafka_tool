@@ -30,7 +30,7 @@ if [ "$(uname -s)" = Darwin ]; then
   TAR_OPTIONS=(--no-xattrs --no-acls --no-fflags)
 fi
 tar "${TAR_OPTIONS[@]}" -C "$ROOT" \
-  --exclude=.git --exclude=node_modules --exclude=release \
+  --exclude=.git --exclude=.cache --exclude=node_modules --exclude=release \
   --exclude=dist --exclude=desktop/build/bin --exclude=.DS_Store \
   -cf - . | docker run --rm -i --platform linux/arm64 \
     --mount "type=bind,source=$ROOT/release,target=/work/release" \

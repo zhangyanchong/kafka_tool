@@ -2,6 +2,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { deleteConsumer, deleteTopic, fetchTopicDeletionPlan, fetchTopicHealth, fetchTopicMessageEstimate, fetchTopicMessageSearchStatus, readTopicMessage, produceTopicMessage, recreateTopic, startTopicMessageSearch, cancelTopicMessageSearch, } from "@/api/connections";
 import { useConnectionStore } from "@/stores/connection";
+import { readMessageLines } from "@/utils/messageImport";
+import MessageText from "@/components/MessageText.vue";
 import AppPagination from "@/components/AppPagination.vue";
 import { alertDialog, confirmDialog } from "@/dialog";
 const route = useRoute();
@@ -52,6 +54,64 @@ const pendingTopicAction = ref(null);
 const confirmedTopicAction = ref(null);
 const showProduceForm = ref(false);
 const producing = ref(false);
+const produceMode = ref("text");
+const importFile = ref(null);
+const importing = ref(false);
+const importProgress = ref("");
+const stopImport = ref(false);
+function selectImportFile(event) {
+    importFile.value = event.target.files?.[0] ?? null;
+    importProgress.value = "";
+    produceError.value = "";
+    produceSuccess.value = "";
+}
+async function importMessages() {
+    const file = importFile.value;
+    if (!file || producing.value)
+        return;
+    const targetTopic = topic.value;
+    if (!await confirmDialog("确认导入文件？", `将文件“${file.name}”按每行一条消息写入 Topic “${targetTopic}”，跳过空白行。写入后无法撤销。`, "开始导入"))
+        return;
+    if (producing.value)
+        return;
+    const payload = { ...connection.form, brokers: [...connection.form.brokers] };
+    const key = messageKey.value;
+    producing.value = true;
+    importing.value = true;
+    stopImport.value = false;
+    produceError.value = "";
+    produceSuccess.value = "";
+    let sent = 0;
+    let lineNumber = 0;
+    let inFlight = false;
+    try {
+        for await (const line of readMessageLines(file)) {
+            if (stopImport.value)
+                break;
+            lineNumber = line.lineNumber;
+            if (!line.value.trim())
+                continue;
+            importProgress.value = `正在发送第 ${lineNumber} 行，已成功 ${sent} 条`;
+            inFlight = true;
+            await produceTopicMessage(targetTopic, payload, key, line.value);
+            inFlight = false;
+            sent++;
+        }
+        importProgress.value = `${stopImport.value ? "已停止" : "导入完成"}：已成功发送 ${sent} 条，已处理至第 ${lineNumber} 行`;
+        if (sent)
+            produceSuccess.value = `文件导入已写入 ${sent} 条消息`;
+    }
+    catch (reason) {
+        const detail = reason instanceof Error ? reason.message : "文件读取或发送失败";
+        produceError.value = `导入停止：已成功 ${sent} 条。${inFlight ? `第 ${lineNumber} 行发送失败，结果可能需要核实，请勿直接重复导入整个文件。` : "请检查文件编码、行大小及内容。"} ${detail}`;
+    }
+    finally {
+        producing.value = false;
+        importing.value = false;
+        if (sent && topic.value === targetTopic)
+            await Promise.all([search(), loadTopicHealth(), loadMessageEstimate()]);
+    }
+}
 const messageKey = ref("");
 const messageValue = ref("");
 const produceError = ref("");
@@ -321,6 +381,8 @@ function openProduceForm() {
 async function produceMessage() {
     if (producing.value)
         return;
+    if (produceMode.value === "file")
+        return importMessages();
     if (!messageValue.value.trim()) {
         produceError.value = "消息内容不能为空";
         return;
@@ -578,7 +640,8 @@ onMounted(() => {
     loadMessageEstimate();
     search();
 });
-onUnmounted(cancelSearch);
+onUnmounted(() => { stopImport.value = true; cancelSearch(); });
+watch(topic, () => { stopImport.value = true; });
 const __VLS_ctx = {
     ...{},
     ...{},
@@ -665,17 +728,55 @@ if (__VLS_ctx.showProduceForm) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+        disabled: (__VLS_ctx.producing),
         placeholder: "留空则发送无 Key 消息",
     });
     (__VLS_ctx.messageKey);
     __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
-        value: (__VLS_ctx.messageValue),
-        rows: "6",
-        required: true,
-        placeholder: "输入文本或 JSON 数据",
+    __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+        value: (__VLS_ctx.produceMode),
+        disabled: (__VLS_ctx.producing),
     });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "text",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+        value: "file",
+    });
+    if (__VLS_ctx.produceMode === 'text') {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
+            value: (__VLS_ctx.messageValue),
+            disabled: (__VLS_ctx.producing),
+            rows: "6",
+            required: true,
+            placeholder: "输入文本或 JSON 数据",
+        });
+    }
+    else {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+            ...{ onChange: (__VLS_ctx.selectImportFile) },
+            type: "file",
+            disabled: (__VLS_ctx.producing),
+            required: true,
+        });
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+        if (__VLS_ctx.importFile) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+            (__VLS_ctx.importFile.name);
+            (__VLS_ctx.formatBytes(__VLS_ctx.importFile.size));
+        }
+        if (__VLS_ctx.importProgress) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                role: "status",
+            });
+            (__VLS_ctx.importProgress);
+        }
+    }
     if (__VLS_ctx.produceError) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
             ...{ class: "produce-feedback error" },
@@ -698,13 +799,29 @@ if (__VLS_ctx.showProduceForm) {
         ...{ class: "produce-actions" },
     });
     /** @type {__VLS_StyleScopedClasses['produce-actions']} */ ;
+    if (__VLS_ctx.importing) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.showProduceForm))
+                        throw 0;
+                    if (!(__VLS_ctx.importing))
+                        throw 0;
+                    __VLS_ctx.stopImport = true;
+                    __VLS_ctx.importProgress = '正在停止，等待当前消息发送结束…';
+                    // @ts-ignore
+                    [producing, producing, producing, producing, producing, messageKey, produceMode, produceMode, messageValue, selectImportFile, importFile, importFile, importFile, formatBytes, importProgress, importProgress, importProgress, produceError, produceError, produceSuccess, produceSuccess, importing, stopImport,];
+                } },
+            type: "button",
+            disabled: (__VLS_ctx.stopImport),
+        });
+    }
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
         ...{ class: "topic-produce-button" },
         type: "submit",
         disabled: (__VLS_ctx.producing),
     });
     /** @type {__VLS_StyleScopedClasses['topic-produce-button']} */ ;
-    (__VLS_ctx.producing ? "保存中…" : "保存并发送");
+    (__VLS_ctx.producing ? (__VLS_ctx.importing ? "导入中…" : "保存中…") : (__VLS_ctx.produceMode === 'file' ? "导入并发送" : "保存并发送"));
 }
 __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
     ...{ class: "summary-grid topic-health-summary" },
@@ -790,7 +907,7 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
     ...{ onClick: (...[$event]) => {
             return (__VLS_ctx.healthCollapsed = !__VLS_ctx.healthCollapsed);
             // @ts-ignore
-            [producing, producing, producing, messageKey, messageValue, produceError, produceError, produceSuccess, produceSuccess, estimatedMessageMetric, estimateError, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
+            [producing, producing, produceMode, importing, stopImport, estimatedMessageMetric, estimateError, healthMetric, healthMetric, healthMetric, healthMetric, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, topicHealth, healthLoading, healthLoading, healthError, loadTopicHealth, healthCollapsed, healthCollapsed,];
         } },
     type: "button",
     'aria-expanded': (!__VLS_ctx.healthCollapsed),
@@ -1272,7 +1389,7 @@ if (__VLS_ctx.messages.length) {
                             throw 0;
                         return (__VLS_ctx.copyText(JSON.stringify(message.headers.map(header => ({ key: header.key, value: header.binary ? '二进制内容' : header.null ? null : header.value })), null, 2), `headers-${__VLS_ctx.messageId(message)}`));
                         // @ts-ignore
-                        [messageId, messageId, formatTime, formatBytes, copyText,];
+                        [formatBytes, messageId, messageId, formatTime, copyText,];
                     } },
                 type: "button",
             });
@@ -1351,10 +1468,14 @@ if (__VLS_ctx.messages.length) {
             ...{ class: "message-content" },
         });
         /** @type {__VLS_StyleScopedClasses['message-content']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.pre, __VLS_intrinsics.pre)({
-            ...{ onClick: () => { } },
-        });
-        (__VLS_ctx.loadingMessageIDs.has(__VLS_ctx.messageId(message)) ? "正在读取完整内容…" : (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? message.value : __VLS_ctx.preview(__VLS_ctx.displayedMessageValue(message))));
+        const __VLS_11 = MessageText;
+        // @ts-ignore
+        const __VLS_12 = __VLS_asFunctionalComponent1(__VLS_11, new __VLS_11({
+            value: (__VLS_ctx.loadingMessageIDs.has(__VLS_ctx.messageId(message)) ? '正在读取完整内容…' : (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? message.value : __VLS_ctx.preview(__VLS_ctx.displayedMessageValue(message)))),
+        }));
+        const __VLS_13 = __VLS_12({
+            value: (__VLS_ctx.loadingMessageIDs.has(__VLS_ctx.messageId(message)) ? '正在读取完整内容…' : (__VLS_ctx.expanded.has(__VLS_ctx.messageId(message)) ? message.value : __VLS_ctx.preview(__VLS_ctx.displayedMessageValue(message)))),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_12));
         __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
             ...{ onClick: (...[$event]) => {
                     if (!(__VLS_ctx.messages.length))
@@ -1374,18 +1495,18 @@ if (__VLS_ctx.messages.length) {
         // @ts-ignore
         [messageId, messageId, messageId, copied, loadingMessageIDs, expanded,];
     }
-    const __VLS_11 = AppPagination;
+    const __VLS_16 = AppPagination;
     // @ts-ignore
-    const __VLS_12 = __VLS_asFunctionalComponent1(__VLS_11, new __VLS_11({
+    const __VLS_17 = __VLS_asFunctionalComponent1(__VLS_16, new __VLS_16({
         page: (__VLS_ctx.page),
         pageSize: (__VLS_ctx.pageSize),
         total: (__VLS_ctx.messages.length),
     }));
-    const __VLS_13 = __VLS_12({
+    const __VLS_18 = __VLS_17({
         page: (__VLS_ctx.page),
         pageSize: (__VLS_ctx.pageSize),
         total: (__VLS_ctx.messages.length),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_12));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_17));
 }
 else if (!__VLS_ctx.loading && !__VLS_ctx.loadError) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
