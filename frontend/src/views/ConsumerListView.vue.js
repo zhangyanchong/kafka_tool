@@ -4,7 +4,8 @@ import AppPagination from "@/components/AppPagination.vue";
 import { deleteConsumer, listConsumers } from "@/api/connections";
 import { confirmDialog } from "@/dialog";
 import { useConnectionStore } from "@/stores/connection";
-const keyword = ref("");
+const groupKeyword = ref("");
+const topicKeyword = ref("");
 const statusFilter = ref("all");
 const page = ref(1);
 const pageSize = 10;
@@ -44,10 +45,13 @@ function consumerStateRank(consumer) {
     return 4;
 }
 const filteredConsumers = computed(() => {
-    const search = keyword.value.trim().toLowerCase();
+    const groupSearch = groupKeyword.value.trim().toLowerCase();
+    const topicSearch = topicKeyword.value.trim().toLowerCase();
     return consumers.value
         .filter((consumer) => {
-        if (search && !consumer.groupId.toLowerCase().includes(search))
+        if (groupSearch && !consumer.groupId.toLowerCase().includes(groupSearch))
+            return false;
+        if (topicSearch && !(consumer.topics || []).some((topic) => topic.toLowerCase().includes(topicSearch)))
             return false;
         if (statusFilter.value === "active")
             return isActiveConsumer(consumer);
@@ -64,7 +68,7 @@ const paginatedConsumers = computed(() => {
 });
 const stableConsumerCount = computed(() => consumers.value.filter((consumer) => consumer.state.toLowerCase() === "stable").length);
 const emptyConsumerCount = computed(() => consumers.value.filter((consumer) => consumer.state.toLowerCase() === "empty").length);
-watch([keyword, statusFilter], () => { page.value = 1; });
+watch([groupKeyword, topicKeyword, statusFilter], () => { page.value = 1; });
 watch(() => filteredConsumers.value.length, (total) => {
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
     if (page.value > lastPage)
@@ -112,6 +116,10 @@ const __VLS_ctx = {
 let __VLS_components;
 let __VLS_intrinsics;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['consumer-toolbar-controls']} */ ;
+/** @type {__VLS_StyleScopedClasses['consumer-toolbar-controls']} */ ;
+/** @type {__VLS_StyleScopedClasses['search-box']} */ ;
+/** @type {__VLS_StyleScopedClasses['consumer-topics-cell']} */ ;
 __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
     ...{ class: "list-page" },
 });
@@ -191,9 +199,30 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.path)({
     d: "m16 16 4 4",
 });
 __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
-    placeholder: "搜索 Consumer Group",
+    'aria-label': "搜索消费组",
+    placeholder: "搜索消费组",
 });
-(__VLS_ctx.keyword);
+(__VLS_ctx.groupKeyword);
+__VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+    ...{ class: "search-box" },
+});
+/** @type {__VLS_StyleScopedClasses['search-box']} */ ;
+__VLS_asFunctionalElement1(__VLS_intrinsics.svg, __VLS_intrinsics.svg)({
+    viewBox: "0 0 24 24",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.circle)({
+    cx: "11",
+    cy: "11",
+    r: "6.5",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.path)({
+    d: "m16 16 4 4",
+});
+__VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+    'aria-label': "搜索 Topic",
+    placeholder: "搜索 Topic",
+});
+(__VLS_ctx.topicKeyword);
 __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
     value: (__VLS_ctx.statusFilter),
     ...{ class: "consumer-status-filter" },
@@ -219,6 +248,7 @@ if (__VLS_ctx.filteredConsumers.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.th, __VLS_intrinsics.th)({
         ...{ class: "consumer-actions-heading" },
     });
@@ -231,7 +261,7 @@ if (__VLS_ctx.filteredConsumers.length) {
                         throw 0;
                     return (__VLS_ctx.openConsumer(consumer.groupId));
                     // @ts-ignore
-                    [loadConsumers, loading, loading, consumers, stableConsumerCount, emptyConsumerCount, keyword, statusFilter, filteredConsumers, filteredConsumers, paginatedConsumers, openConsumer,];
+                    [loadConsumers, loading, loading, consumers, stableConsumerCount, emptyConsumerCount, groupKeyword, topicKeyword, statusFilter, filteredConsumers, filteredConsumers, paginatedConsumers, openConsumer,];
                 } },
             ...{ onKeydown: (...[$event]) => {
                     if (!(__VLS_ctx.filteredConsumers.length))
@@ -252,6 +282,21 @@ if (__VLS_ctx.filteredConsumers.length) {
             ...{ class: "row-arrow" },
         });
         /** @type {__VLS_StyleScopedClasses['row-arrow']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({
+            ...{ class: "consumer-topics-cell" },
+        });
+        /** @type {__VLS_StyleScopedClasses['consumer-topics-cell']} */ ;
+        for (const [topic] of __VLS_vFor((consumer.topics))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                key: (topic),
+            });
+            (topic);
+            // @ts-ignore
+            [];
+        }
+        if (!consumer.topics?.length) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
             ...{ class: "row-status" },
@@ -324,7 +369,7 @@ if (!__VLS_ctx.filteredConsumers.length) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
     (__VLS_ctx.loading ? "正在读取 Consumer" : __VLS_ctx.loadError ? "Consumer 读取失败" : "没有找到 Consumer");
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    (__VLS_ctx.loadError || (__VLS_ctx.loading ? "正在从 Kafka 集群获取完整列表…" : "当前集群没有可显示的消费组。"));
+    (__VLS_ctx.loadError || (__VLS_ctx.loading ? "正在从 Kafka 集群获取完整列表…" : "没有匹配的消费组，请调整搜索词或状态筛选。"));
 }
 const __VLS_0 = AppPagination;
 // @ts-ignore

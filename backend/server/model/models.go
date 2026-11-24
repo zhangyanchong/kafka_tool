@@ -179,10 +179,11 @@ type TopicMessageEstimateResponse struct {
 }
 
 type ConsumerItem struct {
-	GroupID      string `json:"groupId"`
-	State        string `json:"state"`
-	ProtocolType string `json:"protocolType"`
-	GroupType    string `json:"groupType"`
+	Topics       []string `json:"topics"`
+	GroupID      string   `json:"groupId"`
+	State        string   `json:"state"`
+	ProtocolType string   `json:"protocolType"`
+	GroupType    string   `json:"groupType"`
 }
 
 type ConsumerListResponse struct {

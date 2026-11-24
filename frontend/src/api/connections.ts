@@ -202,6 +202,7 @@ export interface TopicHealth {
 }
 
 export interface KafkaConsumer {
+  topics: string[];
   groupId: string;
   state: string;
   protocolType: string;

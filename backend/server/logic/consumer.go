@@ -18,10 +18,15 @@ func FindConsumers(ctx context.Context, client *kgo.Client) (model.ConsumerListR
 	if err != nil {
 		return model.ConsumerListResponse{}, err
 	}
+	groupTopics, err := consumerGroupTopics(ctx, client)
+	if err != nil {
+		return model.ConsumerListResponse{}, fmt.Errorf("读取消费组关联 Topic 失败：%s", FriendlyKafkaError(err))
+	}
 	items := make([]model.ConsumerItem, 0, len(response.Groups))
 	for _, group := range response.Groups {
 		items = append(items, model.ConsumerItem{
 			GroupID: group.Group, State: group.GroupState,
+			Topics:       sortedTopicNames(groupTopics[group.Group]),
 			ProtocolType: group.ProtocolType, GroupType: group.GroupType,
 		})
 	}

@@ -6,7 +6,8 @@ import { deleteConsumer, listConsumers, type KafkaConsumer } from "@/api/connect
 import { confirmDialog } from "@/dialog";
 import { useConnectionStore } from "@/stores/connection";
 
-const keyword = ref("");
+const groupKeyword = ref("");
+const topicKeyword = ref("");
 const statusFilter = ref<"all" | "active" | "idle">("all");
 const page = ref(1);
 const pageSize = 10;
@@ -47,10 +48,12 @@ function consumerStateRank(consumer: KafkaConsumer) {
 }
 
 const filteredConsumers = computed(() => {
-  const search = keyword.value.trim().toLowerCase();
+  const groupSearch = groupKeyword.value.trim().toLowerCase();
+  const topicSearch = topicKeyword.value.trim().toLowerCase();
   return consumers.value
     .filter((consumer) => {
-      if (search && !consumer.groupId.toLowerCase().includes(search)) return false;
+      if (groupSearch && !consumer.groupId.toLowerCase().includes(groupSearch)) return false;
+      if (topicSearch && !(consumer.topics || []).some((topic) => topic.toLowerCase().includes(topicSearch))) return false;
       if (statusFilter.value === "active") return isActiveConsumer(consumer);
       if (statusFilter.value === "idle") return isIdleConsumer(consumer);
       return true;
@@ -71,7 +74,7 @@ const emptyConsumerCount = computed(() =>
   consumers.value.filter((consumer) => consumer.state.toLowerCase() === "empty").length,
 );
 
-watch([keyword, statusFilter], () => { page.value = 1; });
+watch([groupKeyword, topicKeyword, statusFilter], () => { page.value = 1; });
 watch(() => filteredConsumers.value.length, (total) => {
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   if (page.value > lastPage) page.value = lastPage;
@@ -125,7 +128,7 @@ async function removeConsumer(groupId: string) {
       <div>
         <span class="section-kicker">CONSUMPTION</span>
         <h1>Consumers</h1>
-        <p>查看消费组及 Kafka 当前报告的状态和协议。</p>
+        <p>查看消费组、关联 Topic 及状态。Topic 包含当前分配和保留消费进度的历史记录。</p>
       </div>
       <button class="refresh-button" type="button" :disabled="loading" @click="loadConsumers">
         <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5" /><path d="M18.5 10A7 7 0 0 0 6 7.5L4 11M5.5 14A7 7 0 0 0 18 16.5l2-3.5" /></svg>
@@ -144,7 +147,11 @@ async function removeConsumer(groupId: string) {
         <div class="consumer-toolbar-controls">
           <div class="search-box">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
-            <input v-model="keyword" placeholder="搜索 Consumer Group" />
+            <input v-model="groupKeyword" aria-label="搜索消费组" placeholder="搜索消费组" />
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
+            <input v-model="topicKeyword" aria-label="搜索 Topic" placeholder="搜索 Topic" />
           </div>
           <select v-model="statusFilter" class="consumer-status-filter" aria-label="按消费组状态筛选">
             <option value="all">全部状态</option>
@@ -156,7 +163,7 @@ async function removeConsumer(groupId: string) {
       </div>
 
       <table v-if="filteredConsumers.length">
-        <thead><tr><th>Consumer Group</th><th>状态</th><th>协议类型</th><th>Group 类型</th><th class="consumer-actions-heading">操作</th></tr></thead>
+        <thead><tr><th>Consumer Group</th><th>Topic</th><th>状态</th><th>协议类型</th><th>Group 类型</th><th class="consumer-actions-heading">操作</th></tr></thead>
         <tbody>
           <tr
             v-for="consumer in paginatedConsumers"
@@ -167,6 +174,10 @@ async function removeConsumer(groupId: string) {
             @keydown.enter="openConsumer(consumer.groupId)"
           >
             <td><strong>{{ consumer.groupId }}</strong><span class="row-arrow">→</span></td>
+            <td class="consumer-topics-cell">
+              <div v-for="topic in consumer.topics" :key="topic">{{ topic }}</div>
+              <span v-if="!consumer.topics?.length">暂无关联 Topic</span>
+            </td>
             <td>
               <span class="row-status" :class="{ inactive: isIdleConsumer(consumer) }">
                 {{ consumer.state || "未报告" }}
@@ -197,7 +208,7 @@ async function removeConsumer(groupId: string) {
           <svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3" /><circle cx="16.5" cy="10" r="2.5" /><path d="M3.5 19c.3-3 1.8-4.5 4.5-4.5s4.2 1.5 4.5 4.5M13 18.5c.3-2.4 1.4-3.6 3.5-3.6 2.2 0 3.4 1.2 3.7 3.6" /></svg>
         </div>
         <strong>{{ loading ? "正在读取 Consumer" : loadError ? "Consumer 读取失败" : "没有找到 Consumer" }}</strong>
-        <p>{{ loadError || (loading ? "正在从 Kafka 集群获取完整列表…" : "当前集群没有可显示的消费组。") }}</p>
+        <p>{{ loadError || (loading ? "正在从 Kafka 集群获取完整列表…" : "没有匹配的消费组，请调整搜索词或状态筛选。") }}</p>
       </div>
       <AppPagination
         v-model:page="page"
@@ -207,3 +218,29 @@ async function removeConsumer(groupId: string) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.consumer-toolbar-controls {
+  flex: 1;
+  flex-wrap: wrap;
+}
+.consumer-toolbar-controls .search-box {
+  flex: 1 1 200px;
+  width: auto;
+  max-width: 300px;
+}
+.consumer-status-filter { flex-shrink: 0; }
+@media (max-width: 760px) {
+  .consumer-toolbar-controls .search-box {
+    flex: none;
+    width: 100%;
+    max-width: none;
+  }
+}
+.consumer-topics-cell {
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.consumer-topics-cell > div + div { margin-top: 6px; }
+</style>
